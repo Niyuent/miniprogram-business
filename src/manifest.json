@@ -1,0 +1,24 @@
+{
+  "name": "商盟",
+  "appid": "",
+  "description": "商盟会员与商家小程序",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true
+    },
+    "usingComponents": true
+  },
+  "h5": {
+    "title": "商盟",
+    "router": {
+      "mode": "hash"
+    }
+  },
+  "vueVersion": "3"
+}
