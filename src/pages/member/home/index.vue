@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { watch } from 'vue';
-import { onLoad, onPageScroll, onPullDownRefresh, onReachBottom, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app';
+import { onHide, onLoad, onPullDownRefresh, onReachBottom, onShareAppMessage, onShareTimeline, onShow, onUnload } from '@dcloudio/uni-app';
 import { storeToRefs } from 'pinia';
 import AppTabBar from '@/components/AppTabBar.vue';
 import HomePanel from '@/components/panels/HomePanel.vue';
@@ -9,6 +9,7 @@ import ProfilePanel from '@/components/panels/ProfilePanel.vue';
 import WalletPanel from '@/components/panels/WalletPanel.vue';
 import { useDeskStore } from '@/stores/desk';
 import { acceptInviteQuery, enableShareMenu, memberSharePath } from '@/utils/share';
+import { clearQrCanvas, disposeQrCache } from '@/utils/qrImage';
 
 const desk = useDeskStore();
 const { member } = storeToRefs(desk);
@@ -31,14 +32,10 @@ watch(member, (key) => {
 }, { immediate: true });
 
 onShow(() => enableShareMenu());
+onHide(() => clearQrCanvas());
+onUnload(() => disposeQrCache());
 onPullDownRefresh(() => { desk.pull += 1; });
 onReachBottom(() => { desk.reach += 1; });
-onPageScroll((event) => {
-  const top = event.scrollTop || 0;
-  if (Math.abs(top - desk.scrollTop) < 80) return;
-  desk.scrollTop = top;
-});
-watch(member, () => { desk.scrollTop = 0; });
 
 onShareAppMessage(() => ({
   title: '来商盟领券，积分当钱花',

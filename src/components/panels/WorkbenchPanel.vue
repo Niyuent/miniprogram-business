@@ -170,7 +170,7 @@ watch(
     <template v-else>
       <view v-if="errorText" class="banner">{{ errorText }}</view>
       <view class="hello-row">
-        <image v-if="avatar" class="avatar" :src="avatar" mode="aspectFill" />
+        <image v-if="avatar" class="avatar" :src="avatar" mode="aspectFill" lazy-load />
         <view v-else class="avatar avatar--ph">{{ (desk?.bossName || '商').slice(0, 1) }}</view>
         <view>
           <view class="hello">{{ desk?.greeting }}，{{ desk?.bossName }}</view>
@@ -208,10 +208,10 @@ watch(
       </view>
 
       <view class="actions">
-        <button class="action" hover-class="press" @tap="go('/pages/merchant/verify/index')">扫码核销</button>
-        <button class="action action--ghost" hover-class="press" @tap="go('/pages/merchant/earn/index')">录单发积分</button>
+        <button class="action pressable" hover-class="press" hover-start-time="20" @tap="go('/pages/merchant/verify/index')">扫码核销</button>
+        <button class="action action--ghost pressable" hover-class="press" hover-start-time="20" @tap="go('/pages/merchant/earn/index')">录单发积分</button>
       </view>
-      <button class="invite" hover-class="press" @tap="inviteOpen = true">邀请入驻</button>
+      <button class="invite pressable" hover-class="press" hover-start-time="20" @tap="inviteOpen = true">邀请入驻</button>
     </template>
 
     <slide-sheet :visible="!!picked" @close="picked = null">

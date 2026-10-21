@@ -1,71 +1,80 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import EmptyState from '@/components/EmptyState.vue';
-import ListSkeleton from '@/components/ListSkeleton.vue';
+import Skeleton from '@/components/Skeleton.vue';
 import { useSessionStore } from '@/stores/session';
-import { exchangeCoupon, fetchCouponTemplates, fetchMe, type CouponTemplate } from '@/services/member';
+import { exchangeCoupon, fetchMe } from '@/services/member';
+import { useMallStore, type MallRow } from '@/stores/mall';
+import { useWalletStore } from '@/stores/wallet';
 import { friendlyMessage } from '@/utils/errors';
 import { HttpError } from '@/utils/request';
 import { rememberMember } from '@/utils/share';
 import { useDeskStore } from '@/stores/desk';
-import { sliceWindow } from '@/utils/windowList';
 import { grantSubscribe } from '@/utils/subscribe';
+import SuccessBurst from '@/components/SuccessBurst.vue';
 
 const props = defineProps<{ active?: boolean }>();
 const session = useSessionStore();
-const loading = ref(true);
-const loadingMore = ref(false);
-const refreshing = ref(false);
-const errorText = ref('');
-type MallRow = { id: number; name: string; face: number; cost: number; rule: string };
+const mall = useMallStore();
+const desk = useDeskStore();
+
 const list = ref<MallRow[]>([]);
-const page = ref(1);
 const total = ref(0);
+const page = ref(1);
+const loading = ref(false);
+const loadingMore = ref(false);
+const errorText = ref('');
 const userId = ref(0);
 const exchanging = ref(false);
-const pageSize = 10;
+const burst = ref(false);
+let afterBurst: (() => void) | null = null;
 
-async function load(reset: boolean) {
-  if (reset) page.value = 1;
-  else loadingMore.value = true;
-  if (reset && !list.value.length) loading.value = true;
+const showSkeleton = computed(() => loading.value && !list.value.length && !mall.ready);
+
+function hydrate() {
+  list.value = mall.rows.slice();
+  total.value = mall.total;
+  page.value = mall.page;
+  return mall.ready;
+}
+
+async function load(reset: boolean, force = false) {
   errorText.value = '';
+  if (reset) {
+    const had = hydrate();
+    loading.value = !had && list.value.length === 0;
+  } else {
+    if (list.value.length >= 50) return;
+    loadingMore.value = true;
+  }
   try {
-    const [me, data] = await Promise.all([
-      reset ? fetchMe() : Promise.resolve(null),
-      fetchCouponTemplates(reset ? 1 : page.value, pageSize),
-    ]);
-    if (me) {
-      userId.value = me.id;
-      rememberMember(me.id);
+    if (reset) {
+      const me = await fetchMe().catch(() => null);
+      if (me) {
+        userId.value = me.id;
+        rememberMember(me.id);
+      }
+      await mall.warm(force);
+      if (!props.active) return;
+      hydrate();
+    } else {
+      const next = page.value + 1;
+      await mall.loadPage(next, { append: true });
+      if (!props.active) return;
+      hydrate();
     }
-    total.value = data.total;
-    const rows = (data.list || []).map(toRow);
-    list.value = reset ? rows : list.value.concat(rows);
   } catch (error) {
-    errorText.value = friendlyMessage(error, '券列表没有加载出来');
+    if (!list.value.length) errorText.value = friendlyMessage(error, '券列表没有加载出来');
   } finally {
     loading.value = false;
     loadingMore.value = false;
-    refreshing.value = false;
     uni.stopPullDownRefresh();
   }
 }
 
 function more() {
   if (loading.value || loadingMore.value || list.value.length >= total.value) return;
-  page.value += 1;
   load(false);
-}
-
-function toRow(row: CouponTemplate): MallRow {
-  return {
-    id: row.id,
-    name: row.name,
-    face: row.faceValue,
-    cost: row.pointsCost,
-    rule: row.thresholdAmount > 0 ? `满 ${row.thresholdAmount} 可用` : '无门槛',
-  };
 }
 
 function ask(item: MallRow) {
@@ -76,23 +85,26 @@ function ask(item: MallRow) {
     success: async (res) => {
       if (!res.confirm || exchanging.value) return;
       exchanging.value = true;
-      uni.showLoading({ title: '正在兑换', mask: true });
       try {
         await exchangeCoupon({
           userId: userId.value,
           templateId: item.id,
           requestId: `ex${Date.now()}${Math.floor(Math.random() * 1000)}`,
         });
-        uni.showModal({
-          title: '兑换成功，已存入卡包',
-          content: '可以去卡包亮码。打开服务通知后，发券或快过期时会提醒你。',
-          confirmText: '允许接收通知',
-          cancelText: '去卡包',
-          success(next) {
-            if (next.confirm) grantSubscribe('exchange');
-            else useDeskStore().member = 'wallet';
-          },
-        });
+        useWalletStore().warm('UNUSED', true).catch(() => undefined);
+        afterBurst = () => {
+          uni.showModal({
+            title: '兑换成功，已存入卡包',
+            content: '可以去卡包亮码。打开服务通知后，发券或快过期时会提醒你。',
+            confirmText: '允许接收通知',
+            cancelText: '去卡包',
+            success(next) {
+              if (next.confirm) grantSubscribe('exchange');
+              else useDeskStore().member = 'wallet';
+            },
+          });
+        };
+        burst.value = true;
       } catch (error) {
         const text = error instanceof HttpError && error.reasonCode === 'BALANCE_NOT_ENOUGH'
           ? '积分不够哦'
@@ -100,15 +112,19 @@ function ask(item: MallRow) {
         uni.showToast({ title: text, icon: 'none' });
       } finally {
         exchanging.value = false;
-        uni.hideLoading();
       }
     },
   });
 }
 
-const desk = useDeskStore();
-const windowed = computed(() => sliceWindow(list.value, desk.scrollTop));
-watch(() => desk.pull, () => { if (props.active) load(true); });
+function onBurstDone() {
+  burst.value = false;
+  const next = afterBurst;
+  afterBurst = null;
+  next?.();
+}
+
+watch(() => desk.pull, () => { if (props.active) load(true, true); });
 watch(() => desk.reach, () => { if (props.active) more(); });
 
 watch(
@@ -116,6 +132,7 @@ watch(
   (on) => {
     if (!on) return;
     session.hydrate();
+    hydrate();
     load(true);
   },
   { immediate: true },
@@ -127,21 +144,30 @@ watch(
     <view class="title">积分商城</view>
     <view class="group">满减券和代金券</view>
     <view class="list">
-      <list-skeleton v-if="loading" :count="4" />
-      <view v-else-if="errorText" class="fail">{{ errorText }}</view>
+      <skeleton v-if="showSkeleton" type="mall" :count="4" />
+      <view v-else-if="errorText && !list.length" class="fail">{{ errorText }}</view>
       <empty-state v-else-if="!list.length" title="暂时没有可兑换的券" hint="上架新券后会出现在这里" />
-      <view :style="{ height: windowed.padTop + 'px' }" />
-      <view v-for="item in windowed.items" :key="item.id" class="coupon" hover-class="press" @tap="ask(item)">
-        <view class="coupon__art">¥{{ item.face }}</view>
-        <view class="coupon__main">
-          <view class="coupon__name">{{ item.name }}</view>
-          <view class="coupon__meta">{{ item.rule }} · {{ item.cost }} 积分</view>
+      <template v-else>
+        <view
+          v-for="(item, index) in list"
+          :key="item.id"
+          class="coupon tap-card list-rise"
+          :style="{ animationDelay: Math.min(index, 8) * 50 + 'ms' }"
+          hover-class="press"
+          hover-start-time="20"
+          @tap="ask(item)"
+        >
+          <view class="coupon__art">¥{{ item.face }}</view>
+          <view class="coupon__main">
+            <text class="coupon__name">{{ item.name }}</text>
+            <text class="coupon__meta">{{ item.rule }} · {{ item.cost }} 积分</text>
+          </view>
         </view>
-      </view>
-      <view :style="{ height: windowed.padBottom + 'px' }" />
-      <view v-if="loadingMore || exchanging" class="more">{{ exchanging ? '正在兑换…' : '正在加载…' }}</view>
-      <view v-else-if="list.length && list.length >= total" class="more">没有更多了</view>
+        <text v-if="loadingMore || exchanging" class="more">{{ exchanging ? '正在兑换…' : '正在加载…' }}</text>
+        <text v-else-if="list.length >= total || list.length >= 50" class="more">没有更多了</text>
+      </template>
     </view>
+    <success-burst :visible="burst" text="兑换成功" @done="onBurstDone" />
   </view>
 </template>
 
@@ -151,11 +177,15 @@ watch(
 .group { margin: 8rpx 0 20rpx; color: #94a3b8; font-size: 32rpx; }
 .list { margin-top: 8rpx; }
 .coupon { display: flex; align-items: center; gap: 20rpx; background: #fff; border-radius: 32rpx; padding: 28rpx; margin-bottom: 20rpx; box-shadow: 0 12rpx 30rpx rgba(15, 23, 42, 0.05); }
-.coupon__art { width: 120rpx; height: 120rpx; border-radius: 36rpx; background: linear-gradient(160deg, #38bdf8, #6366f1); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 32rpx; font-weight: 800; }
-.coupon__main { flex: 1; }
-.coupon__name { font-weight: 700; font-size: 30rpx; }
-.coupon__meta { margin-top: 8rpx; color: #94a3b8; font-size: 24rpx; }
-.empty, .more { text-align: center; color: #64748b; padding: 20rpx 0; }
+.coupon__art {
+  width: 120rpx; height: 120rpx; border-radius: 36rpx;
+  background: linear-gradient(160deg, #38bdf8, #6366f1); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32rpx; font-weight: 800;
+}
+.coupon__main { flex: 1; min-width: 0; }
+.coupon__name { display: block; font-weight: 700; font-size: 30rpx; }
+.coupon__meta { display: block; margin-top: 8rpx; color: #94a3b8; font-size: 24rpx; }
+.more { display: block; text-align: center; color: #64748b; padding: 20rpx 0; }
 .fail { color: #b91c1c; font-weight: 700; }
-.skel { height: 160rpx; background: #e2e8f0; border-radius: 16rpx; }
 </style>

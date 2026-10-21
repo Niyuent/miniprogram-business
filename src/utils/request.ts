@@ -1,5 +1,8 @@
-/** 商盟后端网关。微信开发者工具需勾选不校验合法域名（manifest 已关 urlCheck）。 */
-export const API_BASE_URL = 'http://127.0.0.1/api/v1';
+/**
+ * 商盟后端网关（生产域名占位，上架前请改成真实 API）。
+ * 真机联调本机时临时改为如 `http://10.3.20.252/api/v1`，并勾选「不校验合法域名」。
+ */
+export const API_BASE_URL = 'https://api.yourdomain.com/api/v1';
 
 export const TOKEN_KEY = 'mini_token';
 export const ROLE_KEY = 'mini_role';
@@ -22,7 +25,7 @@ export class HttpError extends Error {
 
 export interface RequestOptions {
   url: string;
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   data?: UniApp.RequestOptions['data'];
   /** 为 false 时不带 token，登录接口使用 */
   auth?: boolean;

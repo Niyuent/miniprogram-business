@@ -20,7 +20,7 @@ watch(
     shown.value = false;
     timer = setTimeout(() => {
       rendered.value = false;
-    }, 280) as unknown as number;
+    }, 300) as unknown as number;
   },
   { immediate: true },
 );
@@ -42,12 +42,15 @@ function close() {
 <style scoped>
 .mask {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
   z-index: 40;
   background: rgba(15, 23, 42, 0);
   display: flex;
   align-items: flex-end;
-  transition: background 0.28s ease;
+  transition: background 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 .mask.is-on { background: rgba(15, 23, 42, 0.45); }
 .sheet {
@@ -56,9 +59,16 @@ function close() {
   border-radius: 36rpx 36rpx 0 0;
   padding: 16rpx 32rpx 48rpx;
   box-sizing: border-box;
-  transform: translateY(110%);
-  transition: transform 0.28s ease;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  will-change: transform;
 }
 .sheet.is-on { transform: translateY(0); }
-.handle { width: 72rpx; height: 8rpx; border-radius: 999rpx; background: #e2e8f0; margin: 8rpx auto 20rpx; }
+.handle {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 999rpx;
+  background: #e2e8f0;
+  margin: 8rpx auto 20rpx;
+}
 </style>

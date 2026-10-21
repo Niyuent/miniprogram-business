@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { watch } from 'vue';
-import { onLoad, onPullDownRefresh, onShareAppMessage, onShow } from '@dcloudio/uni-app';
+import { onLoad, onPullDownRefresh, onReachBottom, onShareAppMessage, onShow } from '@dcloudio/uni-app';
 import { storeToRefs } from 'pinia';
 import AppTabBar from '@/components/AppTabBar.vue';
 import MerchantMinePanel from '@/components/panels/MerchantMinePanel.vue';
@@ -34,6 +34,7 @@ onPullDownRefresh(() => {
   desk.pull += 1;
   if (desk.merchant === 'notification' || desk.merchant === 'profile') uni.stopPullDownRefresh();
 });
+onReachBottom(() => { desk.reach += 1; });
 
 onShareAppMessage(() => ({
   title: '邀请你入驻商盟',

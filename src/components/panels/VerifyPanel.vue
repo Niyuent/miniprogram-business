@@ -6,6 +6,7 @@ import { useSessionStore } from '@/stores/session';
 import { fetchWorkbench, redeemCoupon, verifyCoupon, type CouponPreview } from '@/services/merchant';
 import { friendlyMessage } from '@/utils/errors';
 import { promptSubscribe } from '@/utils/subscribe';
+import SuccessBurst from '@/components/SuccessBurst.vue';
 
 const props = defineProps<{ active?: boolean }>();
 const session = useSessionStore();
@@ -22,6 +23,7 @@ const code = ref('');
 const amount = ref('');
 const confirming = ref(false);
 const success = ref(false);
+const burst = ref(false);
 
 async function prepare() {
   loading.value = true;
@@ -56,6 +58,15 @@ function openSettings() {
 function scan() {
   errorText.value = '';
   success.value = false;
+  // H5 没有相机扫码，直接打开券码输入抽屉。
+  try {
+    if (uni.getSystemInfoSync().uniPlatform === 'web') {
+      mockOpen.value = true;
+      return;
+    }
+  } catch {
+    /* 读不到平台信息时继续走扫码 */
+  }
   uni.scanCode({
     onlyFromCamera: true,
     success(res) {
@@ -134,6 +145,7 @@ async function confirm() {
     await redeemCoupon({ code: code.value, storeId: storeId.value, orderAmount: pay, orderNo });
     drawer.value = false;
     success.value = true;
+    burst.value = true;
     speakSuccess();
     promptSubscribe('redeem');
   } catch (error) {
@@ -162,18 +174,22 @@ watch(
     <view v-if="loading" class="skel" />
     <template v-else>
       <view class="place">{{ storeName }}</view>
-      <button class="scan" hover-class="press" :loading="scanning" :disabled="scanning" @tap="scan">{{ scanning ? '正在校验…' : '扫一扫核销' }}</button>
+      <button
+        class="scan pressable"
+        hover-class="press"
+        hover-start-time="20"
+        :loading="scanning"
+        :disabled="scanning"
+        @tap="scan"
+      >{{ scanning ? '正在校验…' : '扫一扫核销' }}</button>
       <view v-if="errorText" class="fail">{{ errorText }}</view>
-      <view v-if="success" class="ok">
-        <view class="ok__mark">✓</view>
-        <view>核销成功</view>
-      </view>
+      <view v-if="success" class="ok">核销成功，可以继续扫下一张</view>
     </template>
 
     <slide-sheet :visible="mockOpen" @close="mockOpen = false">
       <view class="sheet__title">浏览器里改用券码</view>
       <input v-model="mockCode" class="field" placeholder="输入扫到的券码" />
-      <button class="go" hover-class="press" :loading="scanning" :disabled="scanning" @tap="submitMock">校验这张券</button>
+      <button class="go pressable" hover-class="press" hover-start-time="20" :loading="scanning" :disabled="scanning" @tap="submitMock">校验这张券</button>
     </slide-sheet>
 
     <slide-sheet :visible="drawer" @close="drawer = false">
@@ -181,8 +197,9 @@ watch(
       <view class="face">¥{{ coupon?.faceValue }}</view>
       <view class="meta">顾客手机 {{ coupon?.userPhone || '未登记' }}</view>
       <input v-model="amount" class="field" type="digit" placeholder="本次订单实付金额" />
-      <button class="go" hover-class="press" :loading="confirming" :disabled="confirming" @tap="confirm">{{ confirming ? '正在核销…' : '确认核销' }}</button>
+      <button class="go pressable" hover-class="press" hover-start-time="20" :loading="confirming" :disabled="confirming" @tap="confirm">{{ confirming ? '正在核销…' : '确认核销' }}</button>
     </slide-sheet>
+    <success-burst :visible="burst" text="核销成功" @done="burst = false" />
   </view>
 </template>
 
@@ -192,15 +209,7 @@ watch(
 .place { text-align: center; color: #64748b; }
 .scan { margin-top: 80rpx; height: 120rpx; line-height: 120rpx; background: #1d4ed8; color: #fff; border-radius: 20rpx; font-size: 36rpx; }
 .fail { margin-top: 32rpx; color: #b91c1c; font-size: 32rpx; font-weight: 700; text-align: center; line-height: 1.5; }
-.ok { margin-top: 48rpx; text-align: center; color: #15803d; font-size: 36rpx; font-weight: 700; }
-.ok__mark {
-  width: 140rpx; height: 140rpx; margin: 0 auto 16rpx; border-radius: 50%;
-  background: #16a34a; color: #fff; font-size: 80rpx; line-height: 140rpx;
-  animation: pop .35s ease;
-}
-@keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.mask { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); z-index: 30; display: flex; align-items: flex-end; }
-.sheet { width: 100%; background: #fff; border-radius: 28rpx 28rpx 0 0; padding: 36rpx 32rpx 48rpx; box-sizing: border-box; }
+.ok { margin-top: 48rpx; text-align: center; color: #15803d; font-size: 32rpx; font-weight: 700; }
 .sheet__title { font-size: 32rpx; font-weight: 700; }
 .face { margin-top: 12rpx; font-size: 64rpx; font-weight: 700; }
 .meta { margin-top: 8rpx; color: #64748b; }

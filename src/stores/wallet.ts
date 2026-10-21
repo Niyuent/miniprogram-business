@@ -1,10 +1,26 @@
 import { defineStore } from 'pinia';
 import { dayText, fetchMyCoupons, type CouponCard } from '@/services/member';
 
+export type WalletTab = 'UNUSED' | 'USED' | 'EXPIRED';
 export type WalletRow = { id: number; code: string; name: string; face: number; expire: string };
 
-const FRESH_MS = 20000;
-let flight: Promise<void> | null = null;
+type Bucket = {
+  rows: WalletRow[];
+  total: number;
+  page: number;
+  ready: boolean;
+  at: number;
+};
+
+const FRESH_MS = 15000;
+const PAGE_SIZE = 10;
+/** 已加载行数上限，防止无限拼接撑爆节点。 */
+const MAX_ROWS = 50;
+const flights = new Map<string, Promise<void>>();
+
+function emptyBucket(): Bucket {
+  return { rows: [], total: 0, page: 1, ready: false, at: 0 };
+}
 
 export function toWalletRow(row: CouponCard): WalletRow {
   return {
@@ -16,39 +32,77 @@ export function toWalletRow(row: CouponCard): WalletRow {
   };
 }
 
-/** 首页预取的未使用卡包。只放内存，不把券码写入本地存储。 */
+/** SWR：先读内存缓存秒开，再静默拉最新一页。券码不写本地存储。 */
 export const useWalletStore = defineStore('wallet', {
   state: () => ({
-    rows: [] as WalletRow[],
-    total: 0,
-    ready: false,
-    at: 0,
+    buckets: {
+      UNUSED: emptyBucket(),
+      USED: emptyBucket(),
+      EXPIRED: emptyBucket(),
+    } as Record<WalletTab, Bucket>,
   }),
+  getters: {
+    unusedReady: (state) => state.buckets.UNUSED.ready,
+  },
   actions: {
-    paint(rows: WalletRow[], total: number) {
-      this.rows = rows;
-      this.total = total;
-      this.ready = true;
-      this.at = Date.now();
+    snapshot(status: WalletTab) {
+      const bucket = this.buckets[status];
+      return {
+        rows: bucket.rows.slice(),
+        total: bucket.total,
+        page: bucket.page,
+        ready: bucket.ready,
+      };
     },
     reset() {
-      this.rows = [];
-      this.total = 0;
-      this.ready = false;
-      this.at = 0;
-      flight = null;
+      this.buckets = {
+        UNUSED: emptyBucket(),
+        USED: emptyBucket(),
+        EXPIRED: emptyBucket(),
+      };
+      flights.clear();
     },
-    warm(force = false) {
-      if (flight) return flight;
-      if (!force && this.ready && Date.now() - this.at < FRESH_MS) return Promise.resolve();
-      const job = fetchMyCoupons('UNUSED', 1, 10)
+    /** 预取 / 静默刷新第一页。有缓存时不挡界面。 */
+    warm(status: WalletTab = 'UNUSED', force = false) {
+      return this.loadPage(status, 1, { force, append: false });
+    },
+    /** 加载指定页；append=true 时拼到后面（上拉更多）。 */
+    loadPage(status: WalletTab, page: number, opts: { force?: boolean; append?: boolean } = {}) {
+      const key = `${status}:${page}:${opts.append ? 'a' : 'r'}`;
+      const bucket = this.buckets[status];
+      if (!opts.force && !opts.append && bucket.ready && Date.now() - bucket.at < FRESH_MS) {
+        return Promise.resolve();
+      }
+      const existing = flights.get(key);
+      if (existing) return existing;
+
+      const job = fetchMyCoupons(status, page, PAGE_SIZE)
         .then((data) => {
-          this.paint((data.list || []).map(toWalletRow), data.total);
+          const rows = (data.list || []).map(toWalletRow);
+          const next = this.buckets[status];
+          let merged: WalletRow[];
+          let keptPage = page;
+          if (opts.append) {
+            merged = next.rows.concat(rows).slice(0, MAX_ROWS);
+          } else if (!opts.force && next.page > 1 && next.rows.length > PAGE_SIZE) {
+            // 静默刷新只替换第一页，保留已上拉的后续页
+            merged = rows.concat(next.rows.slice(PAGE_SIZE)).slice(0, MAX_ROWS);
+            keptPage = next.page;
+          } else {
+            merged = rows;
+          }
+          this.buckets[status] = {
+            rows: merged,
+            total: data.total,
+            page: keptPage,
+            ready: true,
+            at: Date.now(),
+          };
         })
         .finally(() => {
-          if (flight === job) flight = null;
+          if (flights.get(key) === job) flights.delete(key);
         });
-      flight = job;
+      flights.set(key, job);
       return job;
     },
   },

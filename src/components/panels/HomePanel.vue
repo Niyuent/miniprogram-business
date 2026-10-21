@@ -4,6 +4,7 @@ import { useSessionStore } from '@/stores/session';
 import { fetchCouponTemplates, fetchMe, fetchPointAccount, type CouponTemplate } from '@/services/member';
 import { friendlyMessage } from '@/utils/errors';
 import { useDeskStore } from '@/stores/desk';
+import { useMallStore } from '@/stores/mall';
 import { useWalletStore } from '@/stores/wallet';
 import { enableShareMenu, rememberMember } from '@/utils/share';
 
@@ -19,7 +20,6 @@ const coupons = ref<HomeCoupon[]>([]);
 async function load(silent = false) {
   if (!silent) loading.value = true;
   errorText.value = '';
-  useWalletStore().warm().catch(() => undefined);
   try {
     const [account, templates, me] = await Promise.all([
       fetchPointAccount(),
@@ -36,6 +36,9 @@ async function load(silent = false) {
       cost: row.pointsCost,
       stock: row.remainingStock,
     }));
+    // 首页就绪后预取卡包 + 商城，进页 0.1s 内有内容
+    useWalletStore().warm('UNUSED').catch(() => undefined);
+    useMallStore().warm().catch(() => undefined);
   } catch (error) {
     errorText.value = friendlyMessage(error, '首页数据没有加载出来');
   } finally {
@@ -47,10 +50,12 @@ async function load(silent = false) {
 function go(url: string) {
   const desk = useDeskStore();
   if (url.includes('/wallet/')) {
+    useWalletStore().warm('UNUSED').catch(() => undefined);
     desk.member = 'wallet';
     return;
   }
   if (url.includes('/mall/')) {
+    useMallStore().warm().catch(() => undefined);
     desk.member = 'mall';
     return;
   }
@@ -58,6 +63,7 @@ function go(url: string) {
 }
 
 function openMall() {
+  useMallStore().warm().catch(() => undefined);
   useDeskStore().member = 'mall';
 }
 

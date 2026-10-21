@@ -17,7 +17,7 @@ async function enterMember() {
     await loginAndRoute();
   } catch (error) {
     status.value = '登录失败';
-    detail.value = error instanceof Error ? error.message : '请稍后重试';
+    detail.value = friendlyMessage(error, '微信登录没有成功，可改用下方商家测试账号');
   } finally {
     pending.value = '';
   }

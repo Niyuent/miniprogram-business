@@ -1,18 +1,21 @@
 {
   "name": "商盟",
-  "appid": "",
+  "appid": "wx7052fab674b8b50f",
   "description": "商盟会员与商家小程序",
   "versionName": "0.1.0",
   "versionCode": "100",
   "transformPx": false,
   "mp-weixin": {
-    "appid": "",
+    "appid": "wx7052fab674b8b50f",
     "setting": {
       "urlCheck": false,
       "es6": true,
       "minified": true
     },
-    "usingComponents": true
+    "usingComponents": true,
+    "optimization": {
+      "subPackages": true
+    }
   },
   "h5": {
     "title": "商盟",

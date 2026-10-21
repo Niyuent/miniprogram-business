@@ -105,15 +105,30 @@ export function createConsumeOrder(body: {
   });
 }
 
-export function earnPoints(body: { userId: number; amount: number; orderId: number; storeId?: number | null }) {
-  return request<{ earned: boolean; points: number; reasonCode?: string }>({
+export function fetchMaskedMember(userId: number) {
+  return request<{ name: string; phone: string; userId: number }>({
+    url: `/users/${userId}/masked-info`,
+    redirectOn401: false,
+  });
+}
+
+export function earnPoints(body: {
+  userId: number;
+  amount: number;
+  orderId?: number;
+  requestId?: string;
+  storeId?: number | null;
+}) {
+  return request<{ earned: boolean; points: number; reasonCode?: string; message?: string }>({
     url: '/points/earn',
     method: 'POST',
     data: {
       userId: body.userId,
       amount: body.amount,
-      orderId: body.orderId,
+      ...(body.orderId ? { orderId: body.orderId } : {}),
+      ...(body.requestId ? { requestId: body.requestId } : {}),
       storeId: body.storeId ?? undefined,
+      remark: '扫码录单送积分',
     },
     redirectOn401: false,
   });

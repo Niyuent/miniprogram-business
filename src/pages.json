@@ -40,6 +40,10 @@
       "style": { "navigationBarTitleText": "积分明细", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
     },
     {
+      "path": "pages/member/qrcode/index",
+      "style": { "navigationBarTitleText": "我的会员码" }
+    },
+    {
       "path": "pages/apply/index",
       "style": { "navigationBarTitleText": "入驻申请", "enableShareAppMessage": true }
     }

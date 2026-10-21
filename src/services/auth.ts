@@ -12,16 +12,30 @@ export interface BootstrapResult {
   tabs?: string[];
 }
 
+function mockWxCode() {
+  return `dev_mock_${Date.now()}`;
+}
+
+/** 开发者工具未登录微信时 uni.login 会报 access_token missing；后端 WX_MODE=mock 时改用假 code。 */
 function wxCode(): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (typeof uni.login !== 'function') {
+      resolve(mockWxCode());
+      return;
+    }
     uni.login({
       provider: 'weixin',
       success(res) {
         if (res.code) resolve(res.code);
-        else reject(new Error('微信未返回 code'));
+        else resolve(mockWxCode());
       },
       fail(err) {
-        reject(new Error(err.errMsg || 'uni.login 失败'));
+        const msg = String(err?.errMsg || '');
+        if (/access_token missing|需要重新登录|login:fail|not support/i.test(msg)) {
+          resolve(mockWxCode());
+          return;
+        }
+        reject(new Error(msg || 'uni.login 失败'));
       },
     });
   });

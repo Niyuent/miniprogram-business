@@ -6,6 +6,7 @@ import { loginMerchantAndRoute, MERCHANT_TEST_ACCOUNTS } from '@/services/auth';
 import { fetchMe, fetchPointAccount } from '@/services/member';
 import { friendlyMessage } from '@/utils/errors';
 import { useDeskStore } from '@/stores/desk';
+import { useWalletStore } from '@/stores/wallet';
 import { logoutToLogin } from '@/utils/logout';
 import { rememberMember } from '@/utils/share';
 import { readSticky, writeSticky } from '@/utils/sticky';
@@ -62,6 +63,7 @@ function go(url: string) {
 }
 
 function goWallet() {
+  useWalletStore().warm('UNUSED').catch(() => undefined);
   useDeskStore().member = 'wallet';
 }
 
@@ -111,9 +113,13 @@ watch(
     <template v-else>
       <view v-if="errorText" class="fail">{{ errorText }}</view>
       <view class="head">
-        <image v-if="avatar" class="avatar" :src="avatar" mode="aspectFill" />
+        <image v-if="avatar" class="avatar" :src="avatar" mode="aspectFill" lazy-load />
         <view v-else class="avatar avatar--ph">{{ name.slice(0, 1) }}</view>
         <view class="name">{{ name }}</view>
+      </view>
+      <view class="member-code" hover-class="press" hover-start-time="20" @tap="go('/pages/member/qrcode/index')">
+        <text class="member-code__title">我的会员码</text>
+        <text class="member-code__hint">到店出示，店员扫码录积分</text>
       </view>
       <view class="logout" @tap="logout">退出登录</view>
       <view class="label">直接进入商家</view>
@@ -146,6 +152,16 @@ watch(
 .avatar { width: 112rpx; height: 112rpx; border-radius: 36rpx; background: linear-gradient(160deg, #38bdf8, #14b8a6); }
 .avatar--ph { color: #fff; display: flex; align-items: center; justify-content: center; font-size: 44rpx; font-weight: 700; }
 .name { font-size: 56rpx; font-weight: 800; }
+.member-code {
+  margin: 8rpx 0 20rpx;
+  padding: 36rpx 28rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, #1d4ed8 0%, #0ea5e9 100%);
+  color: #fff;
+  box-shadow: 0 16rpx 36rpx rgba(29, 78, 216, 0.28);
+}
+.member-code__title { display: block; font-size: 40rpx; font-weight: 800; }
+.member-code__hint { display: block; margin-top: 10rpx; font-size: 24rpx; opacity: 0.9; }
 .row { background: rgba(255,255,255,.92); border-radius: 28rpx; padding: 28rpx 24rpx; margin-bottom: 16rpx; display: flex; justify-content: space-between; box-shadow: 0 10rpx 24rpx rgba(15, 23, 42, 0.04); }
 .block { background: rgba(255,255,255,.92); border-radius: 32rpx; padding: 8rpx 8rpx 16rpx; margin-bottom: 16rpx; box-shadow: 0 10rpx 24rpx rgba(15, 23, 42, 0.04); }
 .block__title { padding: 20rpx 16rpx 0; font-weight: 700; }

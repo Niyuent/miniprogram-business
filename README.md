@@ -4,7 +4,7 @@
 
 ## 安装依赖
 
-在仓库根目录执行：
+在 `web-mini` 目录执行：
 
 ```bash
 npm install
@@ -28,9 +28,9 @@ npm run build:mp-weixin
 
 用微信开发者工具导入目录：
 
-`dist/build/mp-weixin`
+`web-mini/dist/build/mp-weixin`
 
-边改边看时用 `npm run dev:mp-weixin`，导入 `dist/dev/mp-weixin`。本机调试请在开发者工具里勾选「不校验合法域名」。`manifest.json` 里的 `appid` 目前为空，导入前填上你的小程序 AppID。
+边改边看时用 `npm run dev:mp-weixin`，导入 `web-mini/dist/dev/mp-weixin`。本机调试请在开发者工具里勾选「不校验合法域名」。`manifest.json` 里的 `appid` 目前为空，导入前填上你的小程序 AppID。
 
 商家端页面在分包 `pages/merchant`，主包只保留登录、会员页和入驻落地页。
 
