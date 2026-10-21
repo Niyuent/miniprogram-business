@@ -1,7 +1,7 @@
 {
-  "name": "商盟",
+  "name": "小Z随身版",
   "appid": "wx7052fab674b8b50f",
-  "description": "商盟会员与商家小程序",
+  "description": "小Z经营助手 · 会员码与商家核销小程序",
   "versionName": "0.1.0",
   "versionCode": "100",
   "transformPx": false,
@@ -18,7 +18,7 @@
     }
   },
   "h5": {
-    "title": "商盟",
+    "title": "小Z随身版",
     "router": {
       "mode": "hash"
     }

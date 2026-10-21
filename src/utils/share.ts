@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '@/utils/request';
+import { apiBaseUrl } from '@/utils/request';
 
 const MEMBER_ID_KEY = 'mini_member_id';
 
@@ -43,7 +43,7 @@ export function applySharePath(invite: string): string {
 
 /** 网关域名上的入驻申请页，邀请码放在 query 里。 */
 export function applyPageUrl(invite: string): string {
-  const origin = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+  const origin = apiBaseUrl().replace(/\/api\/v1\/?$/, '');
   const query = invite ? `?invite=${encodeURIComponent(invite)}` : '';
   return `${origin}/apply${query}`;
 }

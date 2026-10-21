@@ -19,17 +19,19 @@ interface TabItem {
 }
 
 const catalog: Record<string, { text: string; member: string; merchant: string }> = {
-  home: { text: '首页', member: '/pages/member/home/index', merchant: '/pages/member/home/index' },
+  home: { text: '会员码', member: '/pages/member/home/index', merchant: '/pages/member/home/index' },
   wallet: { text: '卡包', member: '/pages/member/wallet/index', merchant: '/pages/member/wallet/index' },
   mall: { text: '积分商城', member: '/pages/member/mall/index', merchant: '/pages/member/mall/index' },
-  workbench: { text: '工作台', member: '/pages/merchant/workbench/index', merchant: '/pages/merchant/workbench/index' },
+  workbench: { text: '首页', member: '/pages/merchant/workbench/index', merchant: '/pages/merchant/workbench/index' },
+  ai: { text: 'AI助手', member: '/pages/merchant/workbench/index', merchant: '/pages/merchant/workbench/index' },
   verify: { text: '核销', member: '/pages/merchant/verify/index', merchant: '/pages/merchant/verify/index' },
-  notification: { text: '通知', member: '/pages/merchant/notice/index', merchant: '/pages/merchant/notice/index' },
   profile: { text: '我的', member: '/pages/member/profile/index', merchant: '/pages/merchant/mine/index' },
 };
 
 const keys = computed(() => {
-  if (tabs.value.length) return tabs.value;
+  if (tabs.value.length) {
+    return tabs.value.map((k) => (k === 'notification' ? 'ai' : k));
+  }
   if (role.value === 'merchant') return [...MERCHANT_TABS];
   if (role.value === 'member') return [...MEMBER_TABS];
   return [];
@@ -46,7 +48,7 @@ const items = computed<TabItem[]>(() => {
     .filter((item): item is TabItem => item !== null);
 });
 
-const accent = computed(() => (role.value === 'merchant' ? '#0284c7' : '#0b1220'));
+const accent = computed(() => (role.value === 'merchant' ? '#00b8a0' : '#0e1f26'));
 
 function go(item: TabItem) {
   if (item.key === props.active) return;
@@ -66,20 +68,20 @@ function go(item: TabItem) {
 
 <template>
   <view>
-  <network-banner />
-  <view class="tabbar" :style="{ '--accent': accent }">
-    <view class="tabbar__tag">{{ role === 'merchant' ? '商家端' : '会员端' }}</view>
-    <view
-      v-for="item in items"
-      :key="item.key"
-      class="tabbar__item"
-      :class="{ 'is-active': item.key === active }"
-      hover-class="press"
-      @tap="go(item)"
-    >
-      <text class="tabbar__text">{{ item.text }}</text>
+    <network-banner />
+    <view class="tabbar" :style="{ '--accent': accent }">
+      <view class="tabbar__tag">{{ role === 'merchant' ? '商家端' : '会员端' }}</view>
+      <view
+        v-for="item in items"
+        :key="item.key"
+        class="tabbar__item"
+        :class="{ 'is-active': item.key === active }"
+        hover-class="press"
+        @tap="go(item)"
+      >
+        <text class="tabbar__text">{{ item.text }}</text>
+      </view>
     </view>
-  </view>
   </view>
 </template>
 
@@ -95,9 +97,10 @@ function go(item: TabItem) {
   height: 108rpx;
   padding: 8rpx;
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #eaf0f2;
   border-radius: 999rpx;
-  box-shadow: 0 16rpx 40rpx rgba(15, 23, 42, 0.12);
+  box-shadow: 0 16rpx 40rpx rgba(10, 60, 58, 0.1);
 }
 .tabbar__tag {
   position: absolute;
@@ -105,17 +108,18 @@ function go(item: TabItem) {
   left: 28rpx;
   padding: 2rpx 12rpx;
   border-radius: 999rpx;
-  background: #0b1220;
+  background: linear-gradient(135deg, #00d6b2, #19a7f8);
   color: #fff;
   font-size: 20rpx;
   line-height: 32rpx;
+  font-weight: 700;
 }
 .tabbar__item {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
+  color: #8a9aa3;
 }
 .tabbar__item.is-active {
   color: #fff;

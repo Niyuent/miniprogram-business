@@ -45,7 +45,6 @@ function restoreBrightness() {
   savedBrightness = null;
 }
 
-/** 真机上直接画到可见 canvas，避免离屏导出 tempFile 失败。 */
 function drawQr(code: string): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
@@ -64,7 +63,6 @@ function drawQr(code: string): Promise<void> {
       if (drawnResult && typeof (drawnResult as Promise<void>).then === 'function') {
         (drawnResult as Promise<void>).then(done).catch(reject);
       } else {
-        // 旧版 draw 是同步的，稍等一帧再标记完成
         setTimeout(done, 80);
       }
     } catch (e) {
@@ -81,7 +79,6 @@ async function paint() {
     const me = await fetchMe();
     userId.value = me.id;
     payload.value = `SM_MEMBER:${me.id}`;
-    // 先挂载可见 canvas，再绘制（真机离屏/未挂载导出必失败）
     loading.value = false;
     await nextTick();
     await sleep(100);
@@ -128,26 +125,26 @@ onUnload(() => restoreBrightness());
   min-height: 100vh;
   padding: 48rpx 40rpx 80rpx;
   box-sizing: border-box;
-  background: linear-gradient(180deg, #dbeafe 0%, #e7eef8 40%, #f1f5f9 100%);
+  background: linear-gradient(160deg, #eafcf8 0%, #e9f3ff 55%, #f3f7f8 100%);
 }
 .skel {
   height: 640rpx;
-  border-radius: 32rpx;
-  background: #e2e8f0;
+  border-radius: 48rpx;
+  background: #e2eaee;
 }
 .card {
   background: #fff;
-  border-radius: 36rpx;
+  border-radius: 48rpx;
   padding: 48rpx 32rpx 56rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
-  box-shadow: 0 16rpx 40rpx rgba(15, 23, 42, 0.08);
+  box-shadow: 0 16rpx 48rpx rgba(10, 60, 58, 0.08);
 }
 .title {
   font-size: 36rpx;
   font-weight: 800;
-  color: #0f172a;
+  color: #0e1f26;
   margin-bottom: 36rpx;
 }
 .qr-canvas {
@@ -157,23 +154,23 @@ onUnload(() => restoreBrightness());
 }
 .drawing {
   margin-top: 12rpx;
-  color: #94a3b8;
+  color: #8a9aa3;
   font-size: 24rpx;
 }
 .hint {
   margin-top: 48rpx;
-  font-size: 40rpx;
+  font-size: 36rpx;
   font-weight: 800;
-  color: #1d4ed8;
+  color: #009784;
   letter-spacing: 2rpx;
 }
 .meta {
   margin-top: 20rpx;
   font-size: 24rpx;
-  color: #94a3b8;
+  color: #8a9aa3;
 }
 .fail {
-  color: #b91c1c;
+  color: #c22a2e;
   font-weight: 700;
   line-height: 1.5;
   display: flex;
@@ -181,8 +178,8 @@ onUnload(() => restoreBrightness());
   gap: 24rpx;
 }
 .retry {
-  background: #1d4ed8;
+  background: linear-gradient(135deg, #00d6b2, #19a7f8);
   color: #fff;
-  border-radius: 16rpx;
+  border-radius: 999rpx;
 }
 </style>

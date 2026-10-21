@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import EmptyState from '@/components/EmptyState.vue';
 import Skeleton from '@/components/Skeleton.vue';
 import { useSessionStore } from '@/stores/session';
-import { exchangeCoupon, fetchMe } from '@/services/member';
+import { exchangeCoupon, fetchMe, fetchPointAccount } from '@/services/member';
 import { useMallStore, type MallRow } from '@/stores/mall';
 import { useWalletStore } from '@/stores/wallet';
 import { friendlyMessage } from '@/utils/errors';
@@ -25,6 +25,7 @@ const loading = ref(false);
 const loadingMore = ref(false);
 const errorText = ref('');
 const userId = ref(0);
+const balance = ref(0);
 const exchanging = ref(false);
 const burst = ref(false);
 let afterBurst: (() => void) | null = null;
@@ -49,11 +50,15 @@ async function load(reset: boolean, force = false) {
   }
   try {
     if (reset) {
-      const me = await fetchMe().catch(() => null);
+      const [me, account] = await Promise.all([
+        fetchMe().catch(() => null),
+        fetchPointAccount().catch(() => null),
+      ]);
       if (me) {
         userId.value = me.id;
         rememberMember(me.id);
       }
+      if (account) balance.value = account.summary?.available ?? account.account.balance;
       await mall.warm(force);
       if (!props.active) return;
       hydrate();
@@ -77,8 +82,16 @@ function more() {
   load(false);
 }
 
+function goPoints() {
+  uni.navigateTo({ url: '/pages/member/points/index' });
+}
+
 function ask(item: MallRow) {
   if (exchanging.value) return;
+  if (balance.value < item.cost) {
+    uni.showToast({ title: '积分不够哦', icon: 'none' });
+    return;
+  }
   uni.showModal({
     title: '确认兑换',
     content: `确认消耗 ${item.cost} 积分兑换此券吗？`,
@@ -91,6 +104,7 @@ function ask(item: MallRow) {
           templateId: item.id,
           requestId: `ex${Date.now()}${Math.floor(Math.random() * 1000)}`,
         });
+        balance.value = Math.max(0, balance.value - item.cost);
         useWalletStore().warm('UNUSED', true).catch(() => undefined);
         afterBurst = () => {
           uni.showModal({
@@ -141,26 +155,40 @@ watch(
 
 <template>
   <view class="page">
-    <view class="title">积分商城</view>
-    <view class="group">满减券和代金券</view>
+    <view class="nav">
+      <text class="nav__title">积分商城</text>
+    </view>
+    <view class="pts-bar">
+      <view>
+        <text class="pts-bar__v">{{ balance }}</text>
+        <text class="pts-bar__l">可用积分</text>
+      </view>
+      <text class="pts-bar__r" @tap="goPoints">规则 ›</text>
+    </view>
     <view class="list">
       <skeleton v-if="showSkeleton" type="mall" :count="4" />
       <view v-else-if="errorText && !list.length" class="fail">{{ errorText }}</view>
       <empty-state v-else-if="!list.length" title="暂时没有可兑换的券" hint="上架新券后会出现在这里" />
       <template v-else>
-        <view
-          v-for="(item, index) in list"
-          :key="item.id"
-          class="coupon tap-card list-rise"
-          :style="{ animationDelay: Math.min(index, 8) * 50 + 'ms' }"
-          hover-class="press"
-          hover-start-time="20"
-          @tap="ask(item)"
-        >
-          <view class="coupon__art">¥{{ item.face }}</view>
-          <view class="coupon__main">
-            <text class="coupon__name">{{ item.name }}</text>
-            <text class="coupon__meta">{{ item.rule }} · {{ item.cost }} 积分</text>
+        <view class="goods">
+          <view
+            v-for="(item, index) in list"
+            :key="item.id"
+            class="good tap-card list-rise"
+            :class="{ dis: balance < item.cost }"
+            :style="{ animationDelay: Math.min(index, 8) * 50 + 'ms' }"
+            hover-class="press"
+            @tap="ask(item)"
+          >
+            <view class="pic">¥{{ item.face }}</view>
+            <view class="info">
+              <text class="nm">{{ item.name }}</text>
+              <view class="price">
+                <text class="b">{{ item.cost }}</text>
+                <text class="muted">积分</text>
+              </view>
+              <view class="btn">{{ balance < item.cost ? '积分不足' : '一键兑换' }}</view>
+            </view>
           </view>
         </view>
         <text v-if="loadingMore || exchanging" class="more">{{ exchanging ? '正在兑换…' : '正在加载…' }}</text>
@@ -172,20 +200,39 @@ watch(
 </template>
 
 <style scoped>
-.page { min-height: 100vh; padding: 12rpx 32rpx 220rpx; box-sizing: border-box; }
-.title { font-size: 64rpx; font-weight: 800; line-height: 1.05; }
-.group { margin: 8rpx 0 20rpx; color: #94a3b8; font-size: 32rpx; }
-.list { margin-top: 8rpx; }
-.coupon { display: flex; align-items: center; gap: 20rpx; background: #fff; border-radius: 32rpx; padding: 28rpx; margin-bottom: 20rpx; box-shadow: 0 12rpx 30rpx rgba(15, 23, 42, 0.05); }
-.coupon__art {
-  width: 120rpx; height: 120rpx; border-radius: 36rpx;
-  background: linear-gradient(160deg, #38bdf8, #6366f1); color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 32rpx; font-weight: 800;
+.page { min-height: 100vh; padding: 12rpx 32rpx 220rpx; box-sizing: border-box; background: #f3f7f8; }
+.nav { padding: 8rpx 0 16rpx; }
+.nav__title { font-size: 44rpx; font-weight: 800; letter-spacing: -1rpx; color: #0e1f26; }
+.pts-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #fff; border-radius: 40rpx; padding: 24rpx 28rpx;
+  box-shadow: 0 16rpx 48rpx rgba(10, 60, 58, 0.06); margin-bottom: 20rpx;
 }
-.coupon__main { flex: 1; min-width: 0; }
-.coupon__name { display: block; font-weight: 700; font-size: 30rpx; }
-.coupon__meta { display: block; margin-top: 8rpx; color: #94a3b8; font-size: 24rpx; }
-.more { display: block; text-align: center; color: #64748b; padding: 20rpx 0; }
-.fail { color: #b91c1c; font-weight: 700; }
+.pts-bar__v { font-size: 40rpx; font-weight: 800; color: #00b8a0; margin-right: 12rpx; }
+.pts-bar__l { color: #8a9aa3; font-size: 24rpx; }
+.pts-bar__r { color: #8a9aa3; font-size: 24rpx; }
+.goods { display: flex; flex-wrap: wrap; gap: 20rpx; }
+.good {
+  width: calc(50% - 10rpx); background: #fff; border-radius: 36rpx; overflow: hidden;
+  box-shadow: 0 16rpx 48rpx rgba(10, 60, 58, 0.06); box-sizing: border-box;
+}
+.good.dis { opacity: 0.62; }
+.pic {
+  height: 180rpx; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, #e6f9f6, #c9e2ff); color: #00766a;
+  font-size: 48rpx; font-weight: 800;
+}
+.info { padding: 20rpx; }
+.nm { display: block; font-size: 26rpx; font-weight: 700; color: #0e1f26; line-height: 1.35; min-height: 70rpx; }
+.price { margin-top: 8rpx; display: flex; align-items: baseline; gap: 8rpx; }
+.b { font-size: 32rpx; font-weight: 800; color: #00b8a0; }
+.muted { color: #8a9aa3; font-size: 22rpx; }
+.btn {
+  margin-top: 16rpx; height: 64rpx; line-height: 64rpx; text-align: center;
+  border-radius: 999rpx; background: linear-gradient(135deg, #00d6b2, #19a7f8);
+  color: #fff; font-size: 24rpx; font-weight: 700;
+}
+.good.dis .btn { background: #e2eaee; color: #8a9aa3; }
+.more { display: block; text-align: center; color: #8a9aa3; padding: 20rpx 0; }
+.fail { color: #c22a2e; font-weight: 700; }
 </style>

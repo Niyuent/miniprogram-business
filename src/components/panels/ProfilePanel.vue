@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import EmptyState from '@/components/EmptyState.vue';
 import { useSessionStore } from '@/stores/session';
 import { loginMerchantAndRoute, MERCHANT_TEST_ACCOUNTS } from '@/services/auth';
 import { fetchMe, fetchPointAccount } from '@/services/member';
@@ -12,23 +11,22 @@ import { rememberMember } from '@/utils/share';
 import { readSticky, writeSticky } from '@/utils/sticky';
 
 const CARD_KEY = 'mini_member_card';
-type MemberCard = { name: string; avatar: string; balance: number; rule: string };
-const RULE_TEXT = '到店消费后，记录会出现在这里';
-
+type MemberCard = { name: string; avatar: string; balance: number; unused: number };
 const props = defineProps<{ active?: boolean }>();
 const session = useSessionStore();
 const loading = ref(true);
 const name = ref('');
 const avatar = ref('');
 const balance = ref(0);
+const unused = ref(0);
 const errorText = ref('');
-const ruleText = ref(RULE_TEXT);
+const switching = ref('');
 
 function applyCard(card: MemberCard) {
   name.value = card.name || '会员';
   avatar.value = card.avatar || '';
   balance.value = card.balance || 0;
-  ruleText.value = card.rule || RULE_TEXT;
+  unused.value = card.unused || 0;
 }
 
 async function load(silent = false) {
@@ -40,6 +38,8 @@ async function load(silent = false) {
     name.value = me.nickname || session.profileName || '会员';
     avatar.value = me.avatar || session.avatar || '';
     balance.value = account.summary?.available ?? account.account.balance;
+    await useWalletStore().warm('UNUSED').catch(() => undefined);
+    unused.value = useWalletStore().snapshot('UNUSED').total || 0;
     session.profileName = name.value;
     session.avatar = avatar.value;
     uni.setStorageSync('mini_profile_name', name.value);
@@ -48,7 +48,7 @@ async function load(silent = false) {
       name: name.value,
       avatar: avatar.value,
       balance: balance.value,
-      rule: RULE_TEXT,
+      unused: unused.value,
     } satisfies MemberCard);
   } catch (error) {
     errorText.value = friendlyMessage(error, '个人资料没有加载出来');
@@ -67,7 +67,9 @@ function goWallet() {
   useDeskStore().member = 'wallet';
 }
 
-const switching = ref('');
+function goHome() {
+  useDeskStore().member = 'home';
+}
 
 function logout() {
   logoutToLogin();
@@ -109,72 +111,137 @@ watch(
 
 <template>
   <view class="page">
+    <view class="hero">
+      <view class="hero__row">
+        <image v-if="avatar" class="avatar" :src="avatar" mode="aspectFill" lazy-load />
+        <view v-else class="avatar avatar--ph">{{ name.slice(0, 1) }}</view>
+        <view class="meta">
+          <view class="name">{{ name }}</view>
+          <view class="sub">黄金会员 · 积分 {{ balance }}</view>
+        </view>
+      </view>
+    </view>
+
     <view v-if="loading" class="skel" />
     <template v-else>
       <view v-if="errorText" class="fail">{{ errorText }}</view>
-      <view class="head">
-        <image v-if="avatar" class="avatar" :src="avatar" mode="aspectFill" lazy-load />
-        <view v-else class="avatar avatar--ph">{{ name.slice(0, 1) }}</view>
-        <view class="name">{{ name }}</view>
+      <view class="card stats">
+        <view class="stat" @tap="go('/pages/member/points/index')">
+          <view class="num">{{ balance }}</view>
+          <view class="lab">积分</view>
+        </view>
+        <view class="stat" @tap="goWallet">
+          <view class="num">{{ unused }}</view>
+          <view class="lab">待用券</view>
+        </view>
+        <view class="stat" @tap="goHome">
+          <view class="num">码</view>
+          <view class="lab">会员码</view>
+        </view>
       </view>
-      <view class="member-code" hover-class="press" hover-start-time="20" @tap="go('/pages/member/qrcode/index')">
-        <text class="member-code__title">我的会员码</text>
-        <text class="member-code__hint">到店出示，店员扫码录积分</text>
+
+      <view class="card list">
+        <view class="row" @tap="goHome">
+          <view class="ico">码</view>
+          <view class="row__main">
+            <view class="t">我的会员码</view>
+            <view class="d">到店出示，店员扫码录积分</view>
+          </view>
+          <text class="act">打开</text>
+        </view>
+        <view class="row" @tap="go('/pages/member/points/index')">
+          <view class="ico">分</view>
+          <view class="row__main">
+            <view class="t">积分明细</view>
+            <view class="d">查看收支流水</view>
+          </view>
+          <text class="act">查看</text>
+        </view>
+        <view class="row" @tap="goWallet">
+          <view class="ico">券</view>
+          <view class="row__main">
+            <view class="t">我的卡包</view>
+            <view class="d">{{ unused }} 张待用</view>
+          </view>
+          <text class="act">查看</text>
+        </view>
+        <view class="row" @tap="go('/pages/member/galaxy/index')">
+          <view class="ico">盟</view>
+          <view class="row__main">
+            <view class="t">周围商家联盟</view>
+            <view class="d">看看联盟里有哪些店</view>
+          </view>
+          <text class="act">打开</text>
+        </view>
       </view>
-      <view class="logout" @tap="logout">退出登录</view>
-      <view class="label">直接进入商家</view>
+
+      <view class="label">开发：直接进入商家</view>
       <view
         v-for="item in MERCHANT_TEST_ACCOUNTS"
         :key="item.username"
-        class="row"
+        class="dev-row"
         @tap="enterMerchant(item.username)"
       >
         <text>{{ item.label }} · {{ item.hint }}</text>
         <text>{{ switching === item.username ? '进入中' : '进入' }}</text>
       </view>
-      <view class="row" @tap="go('/pages/member/points/index')">
-        <text>我的积分</text><text>{{ balance }}</text>
-      </view>
-      <view class="row" @tap="goWallet">
-        <text>我的卡包</text><text>查看</text>
-      </view>
-      <view class="block">
-        <view class="block__title">消费记录</view>
-        <empty-state title="还没有消费记录" :hint="ruleText" />
-      </view>
+
+      <button class="logout" hover-class="press" @tap="logout">退出登录</button>
     </template>
   </view>
 </template>
 
 <style scoped>
-.page { min-height: 100vh; padding: 12rpx 32rpx 220rpx; box-sizing: border-box; }
-.head { display: flex; align-items: center; gap: 20rpx; margin-bottom: 12rpx; }
-.avatar { width: 112rpx; height: 112rpx; border-radius: 36rpx; background: linear-gradient(160deg, #38bdf8, #14b8a6); }
-.avatar--ph { color: #fff; display: flex; align-items: center; justify-content: center; font-size: 44rpx; font-weight: 700; }
-.name { font-size: 56rpx; font-weight: 800; }
-.member-code {
-  margin: 8rpx 0 20rpx;
-  padding: 36rpx 28rpx;
-  border-radius: 28rpx;
-  background: linear-gradient(135deg, #1d4ed8 0%, #0ea5e9 100%);
-  color: #fff;
-  box-shadow: 0 16rpx 36rpx rgba(29, 78, 216, 0.28);
+.page { min-height: 100vh; padding-bottom: 220rpx; box-sizing: border-box; background: #f3f7f8; }
+.hero {
+  padding: 28rpx 32rpx 72rpx;
+  background: linear-gradient(135deg, #00c9a7 0%, #2e90ff 100%);
+  border-radius: 0 0 48rpx 48rpx;
 }
-.member-code__title { display: block; font-size: 40rpx; font-weight: 800; }
-.member-code__hint { display: block; margin-top: 10rpx; font-size: 24rpx; opacity: 0.9; }
-.row { background: rgba(255,255,255,.92); border-radius: 28rpx; padding: 28rpx 24rpx; margin-bottom: 16rpx; display: flex; justify-content: space-between; box-shadow: 0 10rpx 24rpx rgba(15, 23, 42, 0.04); }
-.block { background: rgba(255,255,255,.92); border-radius: 32rpx; padding: 8rpx 8rpx 16rpx; margin-bottom: 16rpx; box-shadow: 0 10rpx 24rpx rgba(15, 23, 42, 0.04); }
-.block__title { padding: 20rpx 16rpx 0; font-weight: 700; }
-.label { margin: 8rpx 0 12rpx; color: #64748b; font-size: 24rpx; }
+.hero__row { display: flex; align-items: center; gap: 20rpx; }
+.avatar {
+  width: 104rpx; height: 104rpx; border-radius: 36rpx;
+  background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.35);
+}
+.avatar--ph {
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 40rpx; font-weight: 800;
+}
+.meta { color: #fff; }
+.name { font-size: 38rpx; font-weight: 800; }
+.sub { margin-top: 6rpx; font-size: 22rpx; opacity: .88; }
+.card {
+  margin: 0 32rpx 20rpx; background: #fff; border-radius: 40rpx; padding: 8rpx 24rpx;
+  box-shadow: 0 16rpx 48rpx rgba(10, 60, 58, 0.08);
+}
+.stats { margin-top: -40rpx; display: flex; padding: 28rpx 8rpx; }
+.stat { flex: 1; text-align: center; }
+.num { font-size: 36rpx; font-weight: 800; color: #0e1f26; }
+.lab { margin-top: 6rpx; color: #8a9aa3; font-size: 22rpx; }
+.list { padding: 8rpx 20rpx; }
+.row {
+  display: flex; align-items: center; gap: 16rpx; padding: 24rpx 0;
+  border-bottom: 1px solid #eaf0f2;
+}
+.row:last-child { border-bottom: none; }
+.ico {
+  width: 72rpx; height: 72rpx; border-radius: 22rpx; background: #e8fbf7; color: #00766a;
+  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 26rpx;
+}
+.row__main { flex: 1; min-width: 0; }
+.t { font-size: 28rpx; font-weight: 700; color: #0e1f26; }
+.d { margin-top: 4rpx; color: #8a9aa3; font-size: 22rpx; }
+.act { color: #009784; font-weight: 700; font-size: 24rpx; }
+.label { margin: 8rpx 32rpx 12rpx; color: #8a9aa3; font-size: 24rpx; }
+.dev-row {
+  margin: 0 32rpx 12rpx; background: #fff; border-radius: 28rpx; padding: 24rpx;
+  display: flex; justify-content: space-between; color: #33454f; font-size: 26rpx;
+  box-shadow: 0 8rpx 24rpx rgba(10, 60, 58, 0.05);
+}
 .logout {
-  margin: 8rpx 0 20rpx;
-  background: #fff;
-  color: #b91c1c;
-  text-align: center;
-  border-radius: 16rpx;
-  padding: 28rpx 24rpx;
-  font-weight: 700;
+  margin: 24rpx 32rpx 0; background: #fff; color: #c22a2e; border-radius: 999rpx;
+  font-weight: 700; border: 1px solid #eaf0f2;
 }
-.fail { color: #b91c1c; font-weight: 700; margin-bottom: 16rpx; }
-.skel { height: 220rpx; border-radius: 16rpx; background: #e2e8f0; }
+.fail { margin: 0 32rpx 16rpx; color: #c22a2e; font-weight: 700; }
+.skel { margin: -40rpx 32rpx 20rpx; height: 200rpx; border-radius: 40rpx; background: #e2eaee; }
 </style>

@@ -1,4 +1,5 @@
 import { cancelPendingLogin } from '@/services/auth';
+import { useAiChatStore } from '@/stores/ai-chat';
 import { useSessionStore } from '@/stores/session';
 import { useMallStore } from '@/stores/mall';
 import { useWalletStore } from '@/stores/wallet';
@@ -10,6 +11,7 @@ export function logoutToLogin() {
   try {
     useWalletStore().reset();
     useMallStore().reset();
+    useAiChatStore().reset();
     disposeQrCache();
   } catch {
     /* 退出时内存缓存清不掉也不影响登录页 */

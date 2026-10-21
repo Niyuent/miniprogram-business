@@ -1,8 +1,88 @@
 /**
- * 商盟后端网关（生产域名占位，上架前请改成真实 API）。
- * 真机联调本机时临时改为如 `http://10.3.20.252/api/v1`，并勾选「不校验合法域名」。
+ * 后端网关。
+ * - 开发者工具模拟器：127.0.0.1（指电脑本机）
+ * - 真机预览/扫码调试：必须用电脑局域网 IP（手机上的 127.0.0.1 是手机自己）
+ *
+ * 换网后执行 `ipconfig` 看 IPv4，改 DEV_LAN_HOST 后重新编译预览。
+ * 上架改为 https 正式域名。
  */
-export const API_BASE_URL = 'https://api.yourdomain.com/api/v1';
+/** 真机默认局域网 IP；换网后改这里，或在登录页用 storage 覆盖 key=`mini_api_host` */
+export const DEV_LAN_HOST = '10.5.89.38';
+
+function isWechatDevtools() {
+  try {
+    return uni.getSystemInfoSync().platform === 'devtools';
+  } catch {
+    return false;
+  }
+}
+
+function resolveHost() {
+  try {
+    const override = String(uni.getStorageSync('mini_api_host') || '').trim();
+    if (override) return override.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  } catch {
+    /* storage 未就绪时忽略 */
+  }
+  return isWechatDevtools() ? '127.0.0.1' : DEV_LAN_HOST;
+}
+
+function resolveApiBase() {
+  return `http://${resolveHost()}/api/v1`;
+}
+
+/** 每次请求时解析，避免模块加载时拿不到 platform */
+export const API_BASE_URL = resolveApiBase();
+
+export function apiBaseUrl() {
+  return resolveApiBase();
+}
+
+export function apiHost() {
+  return resolveHost();
+}
+
+/** 登录页覆盖接口主机（真机调试用 127.0.0.1，预览码用局域网 IP） */
+export function setApiHost(host: string) {
+  const cleaned = host.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim();
+  if (!cleaned) {
+    try {
+      uni.removeStorageSync('mini_api_host');
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  uni.setStorageSync('mini_api_host', cleaned);
+}
+
+/** 探活：能否打到网关 /health */
+export function probeApi(): Promise<{ ok: boolean; ms: number; detail: string }> {
+  const started = Date.now();
+  const url = `${apiBaseUrl().replace(/\/api\/v1\/?$/, '')}/api/v1/health`;
+  return new Promise((resolve) => {
+    uni.request({
+      url,
+      method: 'GET',
+      timeout: 8000,
+      success(res) {
+        const ms = Date.now() - started;
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve({ ok: true, ms, detail: `通 ${ms}ms` });
+          return;
+        }
+        resolve({ ok: false, ms, detail: `HTTP ${res.statusCode}` });
+      },
+      fail(err) {
+        resolve({
+          ok: false,
+          ms: Date.now() - started,
+          detail: err.errMsg || '网络不可用',
+        });
+      },
+    });
+  });
+}
 
 export const TOKEN_KEY = 'mini_token';
 export const ROLE_KEY = 'mini_role';
@@ -71,7 +151,7 @@ export function request<T>(options: RequestOptions): Promise<T> {
 
   return new Promise((resolve, reject) => {
     uni.request({
-      url: `${API_BASE_URL}${options.url.startsWith('/') ? options.url : `/${options.url}`}`,
+      url: `${apiBaseUrl()}${options.url.startsWith('/') ? options.url : `/${options.url}`}`,
       method: options.method ?? 'GET',
       data: options.data,
       header,

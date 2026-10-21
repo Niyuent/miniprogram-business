@@ -15,7 +15,7 @@ onLoad((query) => {
 });
 
 onShareAppMessage(() => ({
-  title: '邀请你入驻商盟',
+  title: '邀请你一起用小Z',
   path: applySharePath(invite.value),
 }));
 
@@ -43,7 +43,7 @@ function copyLink() {
   <view v-else class="page">
     <network-banner />
     <view class="card">
-      <view class="brand">商盟入驻</view>
+      <view class="brand">小Z 入驻</view>
       <view class="title">附属商家入驻申请</view>
       <view class="code">{{ invite || '通用邀请' }}</view>
       <view class="hint">这是发给你的专属邀请码。填写资料后，由邀请方审核开通。</view>

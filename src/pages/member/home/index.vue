@@ -14,7 +14,7 @@ import { clearQrCanvas, disposeQrCache } from '@/utils/qrImage';
 const desk = useDeskStore();
 const { member } = storeToRefs(desk);
 const titles: Record<string, string> = {
-  home: '首页',
+  home: '会员码',
   wallet: '卡包',
   mall: '积分商城',
   profile: '我的',
@@ -28,7 +28,7 @@ onLoad((query) => {
 });
 
 watch(member, (key) => {
-  uni.setNavigationBarTitle({ title: titles[key] || '首页' });
+  uni.setNavigationBarTitle({ title: titles[key] || '会员码' });
 }, { immediate: true });
 
 onShow(() => enableShareMenu());
@@ -38,12 +38,12 @@ onPullDownRefresh(() => { desk.pull += 1; });
 onReachBottom(() => { desk.reach += 1; });
 
 onShareAppMessage(() => ({
-  title: '来商盟领券，积分当钱花',
+  title: '来小Z领券，积分当钱花',
   path: memberSharePath(),
 }));
 
 onShareTimeline(() => ({
-  title: '来商盟领券，积分当钱花',
+  title: '来小Z领券，积分当钱花',
   query: memberSharePath().split('?')[1] || '',
 }));
 </script>
@@ -59,5 +59,5 @@ onShareTimeline(() => ({
 </template>
 
 <style scoped>
-.desk { min-height: 100vh; background: #e7eef8; }
+.desk { min-height: 100vh; background: #f3f7f8; }
 </style>

@@ -8,7 +8,7 @@
     },
     {
       "path": "pages/member/home/index",
-      "style": { "navigationBarTitleText": "首页", "enableShareAppMessage": true, "enableShareTimeline": true, "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
+      "style": { "navigationBarTitleText": "会员码", "enableShareAppMessage": true, "enableShareTimeline": true, "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
     },
     {
       "path": "pages/member/wallet/index",
@@ -29,10 +29,12 @@
     {
       "path": "pages/member/galaxy/index",
       "style": {
-        "navigationBarTitleText": "商家星系",
-        "navigationBarBackgroundColor": "#050811",
-        "navigationBarTextStyle": "white",
-        "backgroundColor": "#050811"
+        "navigationBarTitleText": "周围联盟",
+        "navigationBarBackgroundColor": "#f3f7f8",
+        "navigationBarTextStyle": "black",
+        "backgroundColor": "#f3f7f8",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
       }
     },
     {
@@ -54,21 +56,24 @@
       "pages": [
         {
           "path": "workbench/index",
-          "style": { "navigationBarTitleText": "工作台", "enableShareAppMessage": true, "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
+          "style": { "navigationBarTitleText": "首页", "enableShareAppMessage": true, "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
         },
         { "path": "verify/index", "style": { "navigationBarTitleText": "核销" } },
         { "path": "earn/index", "style": { "navigationBarTitleText": "录单发积分", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" } },
         { "path": "redeem/index", "style": { "navigationBarTitleText": "核销" } },
         { "path": "notice/index", "style": { "navigationBarTitleText": "通知" } },
-        { "path": "mine/index", "style": { "navigationBarTitleText": "我的" } }
+        { "path": "mine/index", "style": { "navigationBarTitleText": "我的" } },
+        { "path": "staff/index", "style": { "navigationBarTitleText": "店员与权限", "enableShareAppMessage": true } },
+        { "path": "marketing/index", "style": { "navigationBarTitleText": "营销与卡券", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" } },
+        { "path": "issue/index", "style": { "navigationBarTitleText": "发放代金券" } }
       ]
     }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "商盟",
-    "navigationBarBackgroundColor": "#e7eef8",
-    "backgroundColor": "#e7eef8",
+    "navigationBarTitleText": "小Z",
+    "navigationBarBackgroundColor": "#f3f7f8",
+    "backgroundColor": "#f3f7f8",
     "onReachBottomDistance": 80
   }
 }

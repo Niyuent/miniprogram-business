@@ -8,7 +8,7 @@ export const MERCHANT_HOME = '/pages/merchant/workbench/index';
 export const LOGIN_PAGE = '/pages/login/index';
 
 export const MEMBER_TABS = ['home', 'wallet', 'mall', 'profile'] as const;
-export const MERCHANT_TABS = ['workbench', 'verify', 'notification', 'profile'] as const;
+export const MERCHANT_TABS = ['workbench', 'ai', 'verify', 'profile'] as const;
 
 export function homeOf(role: MiniRole): string {
   return role === 'merchant' ? MERCHANT_HOME : MEMBER_HOME;

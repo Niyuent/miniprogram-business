@@ -38,12 +38,35 @@ export interface MemberPlace {
   visited: boolean;
 }
 
+export interface AllianceMerchant {
+  id: number;
+  name: string;
+  role: 'MAIN' | 'SUB';
+  storeId: number | null;
+  storeName: string;
+  address: string;
+  hours: string;
+  storeCount: number;
+}
+
+export interface AllianceGroup {
+  id: number;
+  name: string;
+  city: string;
+  merchantCount: number;
+  merchants: AllianceMerchant[];
+}
+
 export function fetchMerchantGalaxy() {
   return request<GalaxyChart>({ url: '/mini/galaxy' });
 }
 
 export function fetchMemberPlaces() {
   return request<{ places: MemberPlace[] }>({ url: '/mini/places' });
+}
+
+export function fetchMemberAlliances() {
+  return request<{ total: number; alliances: AllianceGroup[] }>({ url: '/mini/alliances' });
 }
 
 export function fetchPublicGalaxy(merchantId: number) {

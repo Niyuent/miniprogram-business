@@ -2,17 +2,16 @@
 import { onLaunch } from '@dcloudio/uni-app';
 
 onLaunch(() => {
-  console.log('商盟小程序启动');
+  console.log('小Z随身版启动');
 });
 </script>
 
 <style>
 page {
-  background: #e7eef8;
-  color: #0b1220;
+  background: #f3f7f8;
+  color: #0e1f26;
   font-size: 28rpx;
 }
-/* 微信 hover-class + H5 :active 共用：缩放到 0.96，避免默认灰底 */
 .press,
 .pressable:active {
   transform: scale(0.96) !important;

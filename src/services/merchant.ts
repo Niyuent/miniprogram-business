@@ -7,7 +7,26 @@ export interface WorkbenchData {
   storeId: number | null;
   merchantId: number;
   merchantName: string;
+  merchantType?: 'MAIN' | 'SUB';
   today: { redemptions: number; pointsIssued: number };
+}
+
+export interface IssueMerchantOption {
+  id: number;
+  name: string;
+  role: 'MAIN' | 'SUB';
+}
+
+export interface IssueOptions {
+  merchantType: 'MAIN' | 'SUB';
+  merchantId: number;
+  merchantName: string;
+  onlyMainCoupons: boolean;
+  merchants: IssueMerchantOption[];
+}
+
+export function fetchIssueOptions() {
+  return request<IssueOptions>({ url: '/mini/issue-options', redirectOn401: false });
 }
 
 export interface FinanceCheckup {
@@ -24,8 +43,61 @@ export interface CouponPreview {
   thresholdAmount: number;
 }
 
+export interface MemberDeskCoupon {
+  id: number;
+  code: string | null;
+  expireAt: string;
+  templateId: number;
+  name: string;
+  faceValue: number;
+  thresholdAmount: number;
+}
+
+export interface MemberDeskTemplate {
+  id: number;
+  name: string;
+  faceValue: number;
+  thresholdAmount: number;
+  pointsCost: number;
+  remainingStock: number;
+}
+
+export interface MemberDesk {
+  member: { userId: number; name: string; phone: string };
+  storeId: number | null;
+  storeName: string;
+  merchantId: number;
+  pointsAvailable: number;
+  coupons: MemberDeskCoupon[];
+  exchangeTemplates: MemberDeskTemplate[];
+}
+
 export function fetchWorkbench() {
   return request<WorkbenchData>({ url: '/mini/workbench' });
+}
+
+export function fetchMemberDesk(userId: number) {
+  return request<MemberDesk>({
+    url: `/mini/member-desk?userId=${userId}`,
+    redirectOn401: false,
+  });
+}
+
+export function exchangeForMember(body: {
+  userId: number;
+  templateId: number;
+  requestId: string;
+}) {
+  return request<{
+    code?: string | null;
+    couponInstanceId?: number;
+    pointsCost?: number;
+  }>({
+    url: '/points/exchange',
+    method: 'POST',
+    data: { ...body, channel: 'WEB' },
+    redirectOn401: false,
+  });
 }
 
 export function fetchFinance() {
