@@ -48,7 +48,7 @@ function absoluteAsset(url: string) {
 
 function requestZero<T>(
   path: string,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   data?: Record<string, unknown> | string,
   opts?: { auth?: boolean; contentType?: string; timeout?: number },
 ): Promise<T> {
@@ -62,7 +62,7 @@ function requestZero<T>(
   return new Promise((resolve, reject) => {
     uni.request({
       url: zeroUrl(path),
-      method,
+      method: method as UniApp.RequestOptions['method'],
       data: data as UniApp.RequestOptions['data'],
       header,
       timeout: opts?.timeout ?? 6000,
@@ -71,13 +71,7 @@ function requestZero<T>(
           resolve(res.data as T);
           return;
         }
-        const body = res.data as { message?: string; detail?: { message?: string } | string };
-        const detail =
-          (typeof body?.detail === 'object' && body.detail?.message) ||
-          (typeof body?.detail === 'string' ? body.detail : '') ||
-          body?.message ||
-          `Zero ${res.statusCode}`;
-        reject(new Error(String(detail)));
+        reject(new Error(zeroErrorMessage(res.data, `Zero ${res.statusCode}`)));
       },
       fail(err) {
         reject(new Error(err.errMsg || 'Zero 不可用'));
@@ -102,6 +96,16 @@ function pickText(payload: unknown): string {
   return '';
 }
 
+function zeroErrorMessage(body: unknown, fallback: string) {
+  if (!body || typeof body !== 'object') return fallback;
+  const row = body as { detail?: string | { message?: string }; message?: string; error?: string };
+  if (typeof row.detail === 'string' && row.detail.trim()) return row.detail.trim();
+  if (typeof row.detail === 'object' && row.detail?.message) return String(row.detail.message);
+  if (typeof row.message === 'string' && row.message.trim()) return row.message.trim();
+  if (typeof row.error === 'string' && row.error.trim()) return row.error.trim();
+  return fallback;
+}
+
 /** 登录 Zero 拿商家 JWT（form: account/password）。 */
 export async function ensureZeroAuth(force = false): Promise<string> {
   if (!ZERO_ENABLED) throw new Error('未开启 Zero（ZERO_ENABLED=false）');
@@ -119,6 +123,18 @@ export async function ensureZeroAuth(force = false): Promise<string> {
   if (!token) throw new Error(raw?.message || 'Zero 登录失败，请确认 content_demo 账号存在且服务已启动');
   uni.setStorageSync(ZERO_TOKEN_KEY, token);
   return token;
+}
+
+/** 拍菜单等餐饮接口要求 business_type=restaurant；演示账号常为 other，自动纠正。 */
+async function ensureRestaurantBusiness() {
+  try {
+    await requestZero('/api/store-profile/me', 'PATCH', {
+      business_type: 'restaurant',
+      industry: '餐饮',
+    }, { timeout: 10000 });
+  } catch {
+    // 旧运行时若不支持 PATCH，忽略；识别接口仍会给出明确 403 文案
+  }
 }
 
 export async function zeroChat(message: string, storeId?: string | number | null): Promise<ZeroChatResult> {
@@ -162,18 +178,120 @@ export async function zeroBriefing(storeName?: string): Promise<ZeroBriefResult>
   }
 }
 
-export async function zeroListTemplates(): Promise<Array<{ id: string; name: string }>> {
+export interface CreativeTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  suitableFor: string[];
+  thumbnail: string;
+  thumbColor: string;
+  features: Array<{
+    key: string;
+    label: string;
+    ui?: string;
+    options?: Array<{ label: string; prompt_value?: string }>;
+  }>;
+}
+
+export async function zeroListTemplates(): Promise<CreativeTemplate[]> {
   await ensureZeroAuth();
-  const raw = await requestZero<{ data?: Array<{ id?: string; name?: string }> } | Array<{ id?: string; name?: string }>>(
-    '/api/creative/templates',
-    'GET',
-    undefined,
-    { timeout: 10000 },
-  );
-  const list = Array.isArray(raw) ? raw : raw.data || [];
+  const raw = await requestZero<
+    | { data?: Array<Record<string, unknown>>; items?: Array<Record<string, unknown>> }
+    | Array<Record<string, unknown>>
+  >('/api/creative/templates', 'GET', undefined, { timeout: 10000 });
+  const list = Array.isArray(raw) ? raw : raw.data || raw.items || [];
   return list
-    .map((row) => ({ id: String(row.id || ''), name: String(row.name || row.id || '') }))
+    .map((row) => {
+      const id = String(row.id || '');
+      const thumb = String(row.thumbnail || '');
+      return {
+        id,
+        name: String(row.name || id),
+        description: String(row.description || ''),
+        category: String(row.category || '通用'),
+        suitableFor: Array.isArray(row.suitable_for) ? (row.suitable_for as string[]).map(String) : [],
+        thumbnail: absoluteAsset(thumb),
+        thumbColor: String(row.thumb_color || '#0f766e'),
+        features: Array.isArray(row.features)
+          ? (row.features as CreativeTemplate['features'])
+          : [],
+      };
+    })
     .filter((row) => row.id);
+}
+
+/** AI 图片美化：对齐 Zero `/api/creative/enhance`（multipart，字段名 files）。 */
+export async function zeroEnhanceImage(opts: {
+  filePath: string;
+  templateId?: string;
+  product?: string;
+  headline?: string;
+  subheadline?: string;
+}): Promise<ZeroPosterResult> {
+  if (!ZERO_ENABLED) return { ok: false, imageUrl: '', message: '未开启 Zero' };
+  if (!opts.filePath) return { ok: false, imageUrl: '', message: '请先选择一张图片' };
+  try {
+    await ensureZeroAuth();
+    let templateId = opts.templateId || '';
+    if (!templateId) {
+      const tpls = await zeroListTemplates().catch(() => [] as CreativeTemplate[]);
+      templateId = tpls.find((t) => t.id === 't2')?.id || tpls[0]?.id || 't2';
+    }
+    const token = uni.getStorageSync(ZERO_TOKEN_KEY) as string;
+    const formData: Record<string, string> = {
+      template_id: templateId,
+      features: '{}',
+      headline: opts.headline || '',
+      subheadline: opts.subheadline || '',
+      product: opts.product || '',
+      seed: '-1',
+    };
+    const raw = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      uni.uploadFile({
+        url: zeroUrl('/api/creative/enhance'),
+        filePath: opts.filePath,
+        name: 'files',
+        formData,
+        header: token ? { Authorization: `Bearer ${token}` } : {},
+        timeout: 120000,
+        success(res) {
+          try {
+            const body = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              resolve(body as Record<string, unknown>);
+              return;
+            }
+            const detail = (body as { detail?: { message?: string } | string; message?: string })?.detail;
+            const msg =
+              (typeof detail === 'object' && detail?.message) ||
+              (typeof detail === 'string' ? detail : '') ||
+              (body as { message?: string })?.message ||
+              `美化失败 ${res.statusCode}`;
+            reject(new Error(String(msg)));
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error('美化响应解析失败'));
+          }
+        },
+        fail(err) {
+          reject(new Error(`${err.errMsg || '美化上传失败'}（请确认 Zero 已在 ${zeroApiBase()} 启动）`));
+        },
+      });
+    });
+    const imageUrl = absoluteAsset(
+      String(
+        raw.image_url ||
+          raw.url ||
+          raw.enhanced_url ||
+          (raw.items as Array<{ url?: string }>)?.[0]?.url ||
+          '',
+      ),
+    );
+    if (!imageUrl) return { ok: false, imageUrl: '', message: '美化完成但未返回图片地址' };
+    return { ok: true, imageUrl, message: '图片已美化' };
+  } catch (error) {
+    return { ok: false, imageUrl: '', message: error instanceof Error ? error.message : '图片美化失败' };
+  }
 }
 
 /** AI 海报：对齐 Zero `/api/creative/poster`（multipart Form + 可选参考图）。 */
@@ -181,22 +299,25 @@ export async function zeroCreatePoster(opts: {
   productName: string;
   templateId?: string;
   filePath?: string;
+  lighting?: string;
+  tone?: string;
+  size?: string;
 }): Promise<ZeroPosterResult> {
   if (!ZERO_ENABLED) return { ok: false, imageUrl: '', message: '未开启 Zero' };
   try {
     await ensureZeroAuth();
     let templateId = opts.templateId || '';
     if (!templateId) {
-      const tpls = await zeroListTemplates().catch(() => [] as Array<{ id: string; name: string }>);
-      templateId = tpls[0]?.id || 't2';
+      const tpls = await zeroListTemplates().catch(() => [] as CreativeTemplate[]);
+      templateId = tpls.find((t) => t.id === 't2')?.id || tpls[0]?.id || 't2';
     }
 
     const formData: Record<string, string> = {
       product_name: opts.productName,
       template_id: templateId,
-      lighting: '',
-      tone: '',
-      size: '1:1',
+      lighting: opts.lighting || '',
+      tone: opts.tone || '',
+      size: opts.size || '1:1',
       seed: '-1',
     };
 
@@ -323,13 +444,13 @@ export async function zeroParseExpense(filePath: string): Promise<{ ok: boolean;
           try {
             const body = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
             if (res.statusCode >= 200 && res.statusCode < 300) resolve(body as Record<string, unknown>);
-            else reject(new Error((body as { message?: string })?.message || `识别失败 ${res.statusCode}`));
+            else reject(new Error(zeroErrorMessage(body, `识别失败 ${res.statusCode}`)));
           } catch (e) {
             reject(e instanceof Error ? e : new Error('识别响应解析失败'));
           }
         },
         fail(err) {
-          reject(new Error(err.errMsg || '上传失败'));
+          reject(new Error(formatZeroConnectError(err.errMsg || '上传失败')));
         },
       });
     });
@@ -337,44 +458,83 @@ export async function zeroParseExpense(filePath: string): Promise<{ ok: boolean;
     const items = (Array.isArray(data.items) ? data.items : Array.isArray(raw.items) ? raw.items : []) as ZeroParseItem[];
     return { ok: true, items, message: items.length ? `识别到 ${items.length} 笔` : '未识别到明细，可换更清晰的小票重试' };
   } catch (error) {
-    return { ok: false, items: [], message: error instanceof Error ? error.message : '记账识别失败' };
+    return {
+      ok: false,
+      items: [],
+      message: formatZeroConnectError(error instanceof Error ? error.message : '记账识别失败'),
+    };
   }
+}
+
+function uploadMenuRecognize(filePath: string, token: string) {
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
+    uni.uploadFile({
+      url: zeroUrl('/api/restaurant/dishes/recognize'),
+      filePath,
+      name: 'file',
+      header: token ? { Authorization: `Bearer ${token}` } : {},
+      timeout: 60000,
+      success(res) {
+        try {
+          const body = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(body as Record<string, unknown>);
+            return;
+          }
+          reject(new Error(zeroErrorMessage(body, `识别失败 ${res.statusCode}`)));
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error('菜单响应解析失败'));
+        }
+      },
+      fail(err) {
+        reject(new Error(formatZeroConnectError(err.errMsg || '上传失败')));
+      },
+    });
+  });
 }
 
 /** 拍菜单：识别菜品列表。 */
 export async function zeroRecognizeMenu(filePath: string): Promise<{ ok: boolean; dishes: ZeroParseItem[]; message: string }> {
   try {
     await ensureZeroAuth();
+    await ensureRestaurantBusiness();
     const token = uni.getStorageSync(ZERO_TOKEN_KEY) as string;
-    const raw = await new Promise<Record<string, unknown>>((resolve, reject) => {
-      uni.uploadFile({
-        url: zeroUrl('/api/restaurant/dishes/recognize'),
-        filePath,
-        name: 'file',
-        header: token ? { Authorization: `Bearer ${token}` } : {},
-        timeout: 60000,
-        success(res) {
-          try {
-            const body = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-            if (res.statusCode >= 200 && res.statusCode < 300) resolve(body as Record<string, unknown>);
-            else reject(new Error((body as { message?: string; error?: string })?.message || (body as { error?: string })?.error || `识别失败 ${res.statusCode}`));
-          } catch (e) {
-            reject(e instanceof Error ? e : new Error('菜单响应解析失败'));
-          }
-        },
-        fail(err) {
-          reject(new Error(err.errMsg || '上传失败'));
-        },
-      });
-    });
+    let raw: Record<string, unknown>;
+    try {
+      raw = await uploadMenuRecognize(filePath, token);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '';
+      // 业态未切成功时再强制纠正一次并重试
+      if (/餐饮业态|仅对餐饮/i.test(msg)) {
+        await ensureRestaurantBusiness();
+        raw = await uploadMenuRecognize(filePath, token);
+      } else {
+        throw error;
+      }
+    }
     const dishes = (Array.isArray(raw.dishes) ? raw.dishes : []) as ZeroParseItem[];
     if (typeof raw.error === 'string' && raw.error) {
       return { ok: false, dishes, message: String(raw.error) };
     }
     return { ok: true, dishes, message: dishes.length ? `识别到 ${dishes.length} 道菜` : '未识别到菜品' };
   } catch (error) {
-    return { ok: false, dishes: [], message: error instanceof Error ? error.message : '菜单识别失败' };
+    const msg = formatZeroConnectError(error instanceof Error ? error.message : '菜单识别失败');
+    if (/餐饮业态|仅对餐饮/i.test(msg)) {
+      return {
+        ok: false,
+        dishes: [],
+        message: '拍菜单仅支持餐饮业态。已尝试切换演示账号为餐饮，若仍失败请在 Zero 后台把业态改为「餐饮」后再试。',
+      };
+    }
+    return { ok: false, dishes: [], message: msg };
   }
+}
+
+function formatZeroConnectError(msg: string) {
+  if (/ECONNREFUSED|CONNECTION_REFUSED|connect fail|ERR_CONNECTION/i.test(msg)) {
+    return `${msg}\n小Z 经营助手（${zeroApiBase()}）没在跑。请在电脑启动 Zero（端口 8001）后再试。`;
+  }
+  return msg;
 }
 
 /** 促销文案（轻量 copy 接口）。 */

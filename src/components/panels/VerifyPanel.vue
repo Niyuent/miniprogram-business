@@ -250,7 +250,7 @@ async function onExchange(row: MemberDeskTemplate) {
   acting.value = true;
   errorText.value = '';
   try {
-    const requestId = `mini-${desk.value.member.userId}-${row.id}-${Date.now()}`;
+    const requestId = `mx${desk.value.member.userId}t${row.id}d${Date.now()}`.slice(0, 32);
     const res = await exchangeForMember({
       userId: desk.value.member.userId,
       templateId: row.id,

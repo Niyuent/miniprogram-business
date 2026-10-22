@@ -55,6 +55,7 @@ function close() {
 .mask.is-on { background: rgba(15, 23, 42, 0.45); }
 .sheet {
   width: 100%;
+  max-height: 86vh;
   background: #fff;
   border-radius: 36rpx 36rpx 0 0;
   padding: 16rpx 32rpx 48rpx;
@@ -62,6 +63,9 @@ function close() {
   transform: translateY(100%);
   transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   will-change: transform;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .sheet.is-on { transform: translateY(0); }
 .handle {

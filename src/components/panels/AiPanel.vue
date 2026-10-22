@@ -8,12 +8,14 @@ import {
   zeroChat,
   zeroCreatePoster,
   zeroGenerateCopy,
+  zeroListTemplates,
   zeroParseExpense,
-  zeroRecognizeMenu,
+  type CreativeTemplate,
 } from '@/services/xiao-z';
 import { friendlyMessage } from '@/utils/errors';
 import { useDeskStore } from '@/stores/desk';
 import { useAiChatStore } from '@/stores/ai-chat';
+import SlideSheet from '@/components/SlideSheet.vue';
 
 const props = defineProps<{ active?: boolean }>();
 const session = useSessionStore();
@@ -30,6 +32,27 @@ const {
 
 const scrollInto = ref('');
 const chips = ['今天核销多少', '今天发了多少积分', '写个促销文案', '健康分怎么样'];
+
+const posterSheetOpen = ref(false);
+const posterLoadingTpl = ref(false);
+const posterTemplates = ref<CreativeTemplate[]>([]);
+const posterTplError = ref('');
+const selectedTplId = ref('');
+const posterSize = ref<'1:1' | '9:16' | '16:9'>('1:1');
+const posterLighting = ref('');
+const posterTone = ref('');
+
+const selectedTpl = computed(
+  () => posterTemplates.value.find((t) => t.id === selectedTplId.value) || null,
+);
+const lightingOptions = computed(() => {
+  const group = selectedTpl.value?.features.find((f) => f.key === 'lighting');
+  return group?.options || [];
+});
+const toneOptions = computed(() => {
+  const group = selectedTpl.value?.features.find((f) => f.key === 'tone');
+  return group?.options || [];
+});
 
 const lastAnchor = computed(() => `msg-${messages.value.length - 1}`);
 
@@ -77,7 +100,7 @@ async function prepare(forceWelcome = false) {
     statusHint.value = '离线摘要';
     if (forceWelcome || !chat.seeded) {
       chat.seedWelcome(
-        `你好，我是小Z。\n${friendlyMessage(error, '经营数据暂时读不到')}。四大金刚仍可尝试调用 Zero（需本机 8001 已启动）。`,
+        `你好，我是小Z。\n${friendlyMessage(error, '经营数据暂时读不到')}。拍照记账与 AI 海报仍可尝试（需本机 8001 已启动）。`,
       );
     }
   } finally {
@@ -186,78 +209,87 @@ async function runExpense() {
   }
 }
 
-async function runMenu() {
+async function openPosterStyles() {
   if (sending.value) return;
-  sending.value = true;
-  pushUser('拍菜单录入');
+  posterSheetOpen.value = true;
+  posterTplError.value = '';
+  if (posterTemplates.value.length) return;
+  posterLoadingTpl.value = true;
   try {
-    const path = await chooseImage();
-    pushAi('正在识别菜单…');
-    const result = await zeroRecognizeMenu(path);
-    if (!result.ok) {
-      pushAi(`菜单识别失败：${result.message}`);
-      return;
+    const list = await zeroListTemplates();
+    posterTemplates.value = list;
+    if (!selectedTplId.value) {
+      selectedTplId.value = list.find((t) => t.id === 't2')?.id || list[0]?.id || '';
     }
-    if (!result.dishes.length) {
-      pushAi(result.message);
-      return;
-    }
-    const lines = result.dishes.slice(0, 12).map((d, i) => {
-      const price = d.price != null ? `¥${d.price}` : '';
-      return `${i + 1}. ${d.name || '菜品'} ${price}`.trim();
-    });
-    pushAi(`${result.message}\n${lines.join('\n')}\n\n（仅预填，未写入菜品库）`);
+    pickPosterTpl(selectedTplId.value);
   } catch (error) {
-    if (!(error instanceof Error && error.message === '已取消')) {
-      pushAi(friendlyMessage(error, '拍菜单失败'));
-    }
+    posterTplError.value = friendlyMessage(error, '风格列表加载失败，请确认 Zero 已在 8001 启动');
   } finally {
-    sending.value = false;
+    posterLoadingTpl.value = false;
   }
 }
 
+function pickPosterTpl(id: string) {
+  selectedTplId.value = id;
+  const tpl = posterTemplates.value.find((t) => t.id === id);
+  const light = tpl?.features.find((f) => f.key === 'lighting')?.options?.[0];
+  const tone = tpl?.features.find((f) => f.key === 'tone')?.options?.[0];
+  posterLighting.value = light?.prompt_value || light?.label || '';
+  posterTone.value = tone?.prompt_value || tone?.label || '';
+}
+
+function closePosterSheet() {
+  posterSheetOpen.value = false;
+}
+
 async function runPoster() {
+  await openPosterStyles();
+}
+
+async function confirmPoster(withRef: boolean) {
   if (sending.value) return;
-  const product = (posterProduct.value || storeName.value || '今日主推').trim();
-  uni.showModal({
-    title: 'AI 海报',
-    content: `将为「${product}」生成海报。可先在下方输入框改产品名再点海报；也可选一张参考图。`,
-    confirmText: '直接生成',
-    cancelText: '选参考图',
-    success: async (res) => {
-      if (sending.value) return;
-      sending.value = true;
-      pushUser(`AI 海报 · ${product}`);
+  const tpl = selectedTpl.value;
+  if (!tpl) {
+    uni.showToast({ title: '请先选一个风格', icon: 'none' });
+    return;
+  }
+  const product = (posterProduct.value || storeName.value || input.value || '今日主推').trim();
+  posterSheetOpen.value = false;
+  sending.value = true;
+  pushUser(`AI 海报 · ${tpl.name} · ${product}`);
+  try {
+    let filePath = '';
+    if (withRef) {
       try {
-        let filePath = '';
-        if (!res.confirm) {
-          try {
-            filePath = await chooseImage();
-          } catch (error) {
-            if (error instanceof Error && error.message === '已取消') {
-              sending.value = false;
-              return;
-            }
-            throw error;
-          }
-        }
-        pushAi('正在生成海报，可能需要几十秒…');
-        const result = await zeroCreatePoster({
-          productName: product,
-          filePath: filePath || undefined,
-        });
-        if (!result.ok) {
-          pushAi(`海报失败：${result.message}\n请确认小Z经营助手已在 8001 启动，且生图引擎（Liblib）可用。`);
+        filePath = await chooseImage();
+      } catch (error) {
+        if (error instanceof Error && error.message === '已取消') {
+          sending.value = false;
+          posterSheetOpen.value = true;
           return;
         }
-        pushAi('海报已生成，可长按预览图保存。', result.imageUrl);
-      } catch (error) {
-        pushAi(friendlyMessage(error, '海报生成失败'));
-      } finally {
-        sending.value = false;
+        throw error;
       }
-    },
-  });
+    }
+    pushAi(`正在用「${tpl.name}」生成海报，可能需要几十秒…`);
+    const result = await zeroCreatePoster({
+      productName: product,
+      templateId: tpl.id,
+      filePath: filePath || undefined,
+      lighting: posterLighting.value,
+      tone: posterTone.value,
+      size: posterSize.value,
+    });
+    if (!result.ok) {
+      pushAi(`海报失败：${result.message}\n请确认小Z经营助手已在 8001 启动，且生图引擎（Liblib）可用。`);
+      return;
+    }
+    pushAi(`「${tpl.name}」海报已生成，可长按预览图保存。`, result.imageUrl);
+  } catch (error) {
+    pushAi(friendlyMessage(error, '海报生成失败'));
+  } finally {
+    sending.value = false;
+  }
 }
 
 function previewImage(url: string) {
@@ -342,27 +374,22 @@ watch(
         <text v-for="chip in chips" :key="chip" class="chip" @tap="onChip(chip)">{{ chip }}</text>
       </view>
 
-      <text class="section-title">四大金刚 · 一句话搞定</text>
+      <text class="section-title">快捷能力</text>
       <view class="gang">
         <view class="g-btn" @tap="runExpense">
           <view class="gi teal"><text>拍</text></view>
           <text class="gt">拍照记账</text>
           <text class="gd">拍小票，AI 帮你记</text>
         </view>
-        <view class="g-btn" @tap="runMenu">
-          <view class="gi blue"><text>菜</text></view>
-          <text class="gt">拍菜单录入</text>
-          <text class="gd">一键识别菜品</text>
-        </view>
         <view class="g-btn" @tap="onChip('今天卖了多少')">
-          <view class="gi purple"><text>问</text></view>
-          <text class="gt">语音问数</text>
-          <text class="gd">先用快捷提问</text>
+          <view class="gi blue"><text>问</text></view>
+          <text class="gt">问经营</text>
+          <text class="gd">今日核销与积分</text>
         </view>
         <view class="g-btn" @tap="runPoster">
           <view class="gi warm"><text>海</text></view>
           <text class="gt">AI 海报</text>
-          <text class="gd">接小Z海报引擎</text>
+          <text class="gd">先选风格再生成</text>
         </view>
       </view>
       <view class="scroll-pad"></view>
@@ -383,6 +410,77 @@ watch(
         <view class="cam" @tap="goVerify"><text>核</text></view>
       </view>
     </view>
+
+    <slide-sheet :visible="posterSheetOpen" @close="closePosterSheet">
+      <view class="ps">
+        <view class="ps__title">选择海报风格</view>
+        <view class="ps__sub">与小Z一致 · 共 {{ posterTemplates.length || '—' }} 种，点选后生成</view>
+        <view v-if="posterLoadingTpl" class="ps__hint">正在加载风格…</view>
+        <view v-else-if="posterTplError" class="ps__err">{{ posterTplError }}</view>
+        <scroll-view v-else class="ps__list" scroll-y :show-scrollbar="false">
+          <view
+            v-for="tpl in posterTemplates"
+            :key="tpl.id"
+            class="ps__card"
+            :class="{ on: selectedTplId === tpl.id }"
+            @tap="pickPosterTpl(tpl.id)"
+          >
+            <view class="ps__thumb" :style="{ background: tpl.thumbColor }">
+              <image v-if="tpl.thumbnail" class="ps__img" :src="tpl.thumbnail" mode="aspectFill" />
+              <text v-else class="ps__thumb-t">{{ tpl.name.slice(0, 1) }}</text>
+            </view>
+            <view class="ps__meta">
+              <text class="ps__name">{{ tpl.name }}</text>
+              <text class="ps__cat">{{ tpl.category }}</text>
+              <text class="ps__desc">{{ tpl.description }}</text>
+            </view>
+            <view v-if="selectedTplId === tpl.id" class="ps__check">✓</view>
+          </view>
+        </scroll-view>
+
+        <view v-if="selectedTpl" class="ps__opts">
+          <text class="ps__opt-label">画幅</text>
+          <view class="ps__chips">
+            <text
+              v-for="size in (['1:1', '9:16', '16:9'] as const)"
+              :key="size"
+              class="ps__chip"
+              :class="{ on: posterSize === size }"
+              @tap="posterSize = size"
+            >{{ size }}</text>
+          </view>
+          <text v-if="lightingOptions.length" class="ps__opt-label">光影</text>
+          <view v-if="lightingOptions.length" class="ps__chips">
+            <text
+              v-for="opt in lightingOptions"
+              :key="opt.label"
+              class="ps__chip"
+              :class="{ on: posterLighting === (opt.prompt_value || opt.label) }"
+              @tap="posterLighting = opt.prompt_value || opt.label"
+            >{{ opt.label }}</text>
+          </view>
+          <text v-if="toneOptions.length" class="ps__opt-label">色调</text>
+          <view v-if="toneOptions.length" class="ps__chips">
+            <text
+              v-for="opt in toneOptions"
+              :key="opt.label"
+              class="ps__chip"
+              :class="{ on: posterTone === (opt.prompt_value || opt.label) }"
+              @tap="posterTone = opt.prompt_value || opt.label"
+            >{{ opt.label }}</text>
+          </view>
+        </view>
+
+        <view class="ps__actions">
+          <button class="ps__btn ghost" hover-class="press" :disabled="sending || !selectedTpl" @tap="confirmPoster(true)">
+            选参考图生成
+          </button>
+          <button class="ps__btn primary" hover-class="press" :disabled="sending || !selectedTpl" @tap="confirmPoster(false)">
+            直接生成
+          </button>
+        </view>
+      </view>
+    </slide-sheet>
   </view>
 </template>
 
@@ -587,4 +685,139 @@ watch(
 .send { background: #eaf0f2; color: #8a9aa3; }
 .send.on { background: linear-gradient(135deg, #00d6b2, #19a7f8); color: #fff; }
 .cam { background: #e8fbf7; color: #00766a; }
+.ps {
+  display: flex;
+  flex-direction: column;
+  max-height: 78vh;
+}
+.ps__title {
+  font-size: 34rpx;
+  font-weight: 800;
+  color: #0e1f26;
+}
+.ps__sub {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #8a9aa3;
+}
+.ps__hint,
+.ps__err {
+  margin-top: 24rpx;
+  font-size: 26rpx;
+  color: #8a9aa3;
+}
+.ps__err { color: #c22a2e; }
+.ps__list {
+  margin-top: 20rpx;
+  max-height: 42vh;
+  height: 42vh;
+}
+.ps__card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 16rpx;
+  border-radius: 20rpx;
+  border: 1px solid #eaf0f2;
+  background: #fff;
+  margin-bottom: 12rpx;
+  position: relative;
+}
+.ps__card.on {
+  border-color: #00b8a0;
+  background: #f0fffb;
+  box-shadow: 0 8rpx 24rpx rgba(0, 184, 160, 0.12);
+}
+.ps__thumb {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 16rpx;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ps__img { width: 100%; height: 100%; }
+.ps__thumb-t { color: #fff; font-size: 36rpx; font-weight: 800; }
+.ps__meta { flex: 1; min-width: 0; padding-right: 40rpx; }
+.ps__name { display: block; font-size: 28rpx; font-weight: 700; color: #0e1f26; }
+.ps__cat {
+  display: inline-block;
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: #00766a;
+  background: #e6f7f4;
+  padding: 2rpx 10rpx;
+  border-radius: 999rpx;
+}
+.ps__desc {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #8a9aa3;
+  line-height: 1.4;
+}
+.ps__check {
+  position: absolute;
+  right: 16rpx;
+  top: 16rpx;
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  background: #00b8a0;
+  color: #fff;
+  font-size: 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ps__opts { margin-top: 8rpx; }
+.ps__opt-label {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: #8a9aa3;
+}
+.ps__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 8rpx;
+}
+.ps__chip {
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: #f3f7f8;
+  color: #5b6b73;
+  font-size: 22rpx;
+  border: 1px solid transparent;
+}
+.ps__chip.on {
+  background: #e6f7f4;
+  color: #00766a;
+  border-color: #99e0d4;
+  font-weight: 600;
+}
+.ps__actions {
+  margin-top: 20rpx;
+  display: flex;
+  gap: 16rpx;
+}
+.ps__btn {
+  flex: 1;
+  margin: 0;
+  border-radius: 999rpx;
+  font-weight: 700;
+  font-size: 26rpx;
+}
+.ps__btn.ghost {
+  background: #fff;
+  color: #00766a;
+  border: 1px solid #eaf0f2;
+}
+.ps__btn.primary {
+  background: linear-gradient(135deg, #00d6b2, #19a7f8);
+  color: #fff;
+}
 </style>

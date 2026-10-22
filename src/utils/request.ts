@@ -7,7 +7,7 @@
  * 上架改为 https 正式域名。
  */
 /** 真机默认局域网 IP；换网后改这里，或在登录页用 storage 覆盖 key=`mini_api_host` */
-export const DEV_LAN_HOST = '10.5.89.38';
+export const DEV_LAN_HOST = '10.5.19.30';
 
 function isWechatDevtools() {
   try {

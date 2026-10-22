@@ -28,8 +28,22 @@ const REASON: Record<string, string> = {
   POINT_ACCOUNT_NOT_FOUND: '还没有积分账户',
 };
 
+/** 微信开发者工具未勾选「不校验合法域名」时的典型报错 */
+export function isDomainListError(error: unknown): boolean {
+  const msg =
+    error instanceof HttpError
+      ? error.message
+      : error instanceof Error
+        ? error.message
+        : String(error || '');
+  return /url not in domain list|不在以下 request 合法域名|合法域名/i.test(msg);
+}
+
 /** 用 reasonCode 给店员看的句子，不把接口原文直接弹出来。 */
 export function friendlyMessage(error: unknown, fallback = '操作没有成功，请稍后再试'): string {
+  if (isDomainListError(error)) {
+    return '微信拦截了本地接口：请在开发者工具「详情 → 本地设置」勾选「不校验合法域名…」，再点编译';
+  }
   if (error instanceof HttpError) {
     if (error.reasonCode && REASON[error.reasonCode]) return REASON[error.reasonCode];
     if (error.status === 0) return '网络不通，请检查连接后再试';

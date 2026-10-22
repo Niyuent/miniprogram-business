@@ -20,7 +20,7 @@ export function grantSubscribe(scene: SubscribeScene) {
   uni.requestSubscribeMessage({
     tmplIds: [tmplId],
     success(res) {
-      const accepted = (res as Record<string, string>)[tmplId] === 'accept';
+      const accepted = (res as unknown as Record<string, string>)[tmplId] === 'accept';
       uni.showToast({ title: accepted ? '已允许接收通知' : '未打开通知', icon: 'none' });
     },
     fail() {

@@ -102,7 +102,7 @@ function ask(item: MallRow) {
         await exchangeCoupon({
           userId: userId.value,
           templateId: item.id,
-          requestId: `ex${Date.now()}${Math.floor(Math.random() * 1000)}`,
+          requestId: `ex${Date.now()}${Math.floor(Math.random() * 1000)}`.slice(0, 32),
         });
         balance.value = Math.max(0, balance.value - item.cost);
         useWalletStore().warm('UNUSED', true).catch(() => undefined);

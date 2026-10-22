@@ -21,7 +21,7 @@ export const ZERO_ENABLED = true;
 
 /**
  * Zero 商家演示账号（与 docs/store_profile_curl.md 一致）。
- * 四大金刚（海报/记账/拍菜单）需要 Zero JWT。
+ * 拍照记账 / AI 海报需要 Zero JWT。
  */
 export const ZERO_ACCOUNT = 'content_demo';
 export const ZERO_PASSWORD = 'demo123456';
