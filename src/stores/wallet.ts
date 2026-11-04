@@ -2,7 +2,18 @@ import { defineStore } from 'pinia';
 import { dayText, fetchMyCoupons, type CouponCard } from '@/services/member';
 
 export type WalletTab = 'UNUSED' | 'USED' | 'EXPIRED';
-export type WalletRow = { id: number; code: string; name: string; face: number; expire: string };
+export type WalletRow = {
+  id: number;
+  code: string;
+  name: string;
+  face: number;
+  /** 展示用日期串（YYYY-MM-DD） */
+  expire: string;
+  /** 原始到期时间：expire 已被格式化，临期计算必须用这个 */
+  expireAt: string;
+  /** 所属联盟/商家名，卡包里告诉用户「这张券在哪家用」 */
+  allianceName: string;
+};
 
 type Bucket = {
   rows: WalletRow[];
@@ -29,7 +40,19 @@ export function toWalletRow(row: CouponCard): WalletRow {
     name: row.name,
     face: row.faceValue,
     expire: dayText(row.expireAt),
+    expireAt: row.expireAt,
+    allianceName: row.allianceName || '',
   };
+}
+
+/**
+ * 距到期还有几天：向上取整，当天到期算 0。
+ * 解析失败返回 null（而不是 0），避免把脏数据渲染成「今天过期」。
+ */
+export function daysUntil(iso: string): number | null {
+  const at = new Date(iso).getTime();
+  if (Number.isNaN(at)) return null;
+  return Math.max(0, Math.ceil((at - Date.now()) / 86_400_000));
 }
 
 /** SWR：先读内存缓存秒开，再静默拉最新一页。券码不写本地存储。 */

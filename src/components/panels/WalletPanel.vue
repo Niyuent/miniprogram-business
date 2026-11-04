@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { computed, getCurrentInstance, ref, watch } from 'vue';
-import EmptyState from '@/components/EmptyState.vue';
-import Skeleton from '@/components/Skeleton.vue';
 import QrMask from '@/components/QrMask.vue';
 import { useDeskStore } from '@/stores/desk';
 import { useSessionStore } from '@/stores/session';
 import { fetchMe } from '@/services/member';
-import { useWalletStore, type WalletRow, type WalletTab } from '@/stores/wallet';
+import { useWalletStore, daysUntil, type WalletRow, type WalletTab } from '@/stores/wallet';
 import { cachedQr, clearQrCanvas, disposeQrCache, prefetchQr } from '@/utils/qrImage';
 import { friendlyMessage } from '@/utils/errors';
 import { enableShareMenu, rememberMember } from '@/utils/share';
@@ -36,6 +34,29 @@ const qrOpen = ref(false);
 const counts = ref({ UNUSED: 0, USED: 0, EXPIRED: 0 });
 
 const showSkeleton = computed(() => loading.value && !list.value.length && !wallet.snapshot(status.value).ready);
+
+/** 7 天内到期（含今天）的未使用券；只统计已加载行，用作提醒足够了。 */
+const expiringRows = computed(() =>
+  status.value === 'UNUSED'
+    ? list.value.filter((row) => {
+        const days = daysUntil(row.expireAt);
+        return days !== null && days <= 7;
+      })
+    : [],
+);
+
+function isUrgent(row: WalletRow) {
+  if (status.value !== 'UNUSED') return false;
+  const days = daysUntil(row.expireAt);
+  return days !== null && days <= 7;
+}
+
+function urgentText(row: WalletRow) {
+  if (!isUrgent(row)) return '';
+  const days = daysUntil(row.expireAt);
+  if (days === null) return '';
+  return days <= 0 ? ' · 今天到期' : ` · ${days} 天后到期`;
+}
 
 function hydrate() {
   const snap = wallet.snapshot(status.value);
@@ -151,79 +172,137 @@ defineExpose({ dispose: () => { clearQrCanvas(); disposeQrCache(); } });
 </script>
 
 <template>
-  <view class="page">
-    <view class="nav">
-      <text class="nav__title">我的卡包</text>
-    </view>
-    <view class="tabs">
-      <view
-        v-for="tab in tabs"
-        :key="tab.key"
-        class="tab pressable"
-        :class="{ 'is-on': status === tab.key }"
-        hover-class="press"
-        @tap="switchTab(tab.key)"
-      >{{ tab.text }} {{ counts[tab.key] || 0 }}</view>
-    </view>
-    <view class="list">
-      <skeleton v-if="showSkeleton" type="wallet" :count="4" />
-      <view v-else-if="errorText && !list.length" class="fail">{{ errorText }}</view>
-      <empty-state v-else-if="!list.length" title="这里还没有券" hint="去积分商城看看，或到店消费领券" />
-      <template v-else>
-        <view
-          v-for="(item, index) in list"
-          :key="item.id"
-          class="card tap-card list-rise"
-          :style="{ animationDelay: Math.min(index, 8) * 50 + 'ms' }"
-          hover-class="press"
-          @tap="open(item)"
-        >
-          <view class="card__face">¥{{ item.face }}</view>
-          <view class="card__main">
-            <text class="card__name">{{ item.name }}</text>
-            <text class="card__date">有效期至 {{ item.expire }}</text>
+  <view class="pm-page">
+    <view class="pm-hero pm-hero--short">
+      <view class="pm-hero__glow" />
+      <view class="pm-hero__glow2" />
+      <view class="pm-hero__inner">
+        <view class="hero-top">
+          <text class="pm-hero__title">卡包</text>
+          <view class="pm-hero__chip">
+            <view class="pm-hero__dot" />
+            <text>实时同步</text>
           </view>
-          <text v-if="status === 'UNUSED'" class="card__act">亮码</text>
         </view>
-        <text v-if="loadingMore" class="more">正在加载…</text>
-        <text v-else-if="list.length >= total || list.length >= 50" class="more">没有更多了</text>
-      </template>
+        <view class="pm-bignum hero-num">
+          <text class="pm-bignum__v">{{ counts.UNUSED || 0 }}</text>
+          <text class="pm-bignum__u">张待用券</text>
+        </view>
+        <text class="pm-hero__cap hero-cap">已用 {{ counts.USED || 0 }} · 已过期 {{ counts.EXPIRED || 0 }}</text>
+      </view>
     </view>
+
+    <view class="pm-body">
+      <view v-if="expiringRows.length" class="alert">
+        <text class="alert__t">{{ expiringRows.length }} 张券 7 天内到期</text>
+        <text class="alert__d">建议优先使用，过期不补</text>
+      </view>
+
+      <view class="pm-seg">
+        <view
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="pm-seg__i"
+          :class="{ 'is-on': status === tab.key }"
+          hover-class="press"
+          @tap="switchTab(tab.key)"
+        >{{ tab.text }} {{ counts[tab.key] || 0 }}</view>
+      </view>
+
+      <view class="list">
+        <view v-if="showSkeleton">
+          <view v-for="i in 3" :key="i" class="pm-skel skel-row" />
+        </view>
+        <view v-else-if="errorText && !list.length" class="pm-card fail">
+          <text class="fail__t">{{ errorText }}</text>
+        </view>
+        <view v-else-if="!list.length" class="pm-card pm-empty">
+          <view class="pm-empty__t">这里还没有券</view>
+          <view class="pm-empty__d">去积分商城看看，或到店消费领券</view>
+        </view>
+        <template v-else>
+          <view
+            v-for="(item, index) in list"
+            :key="item.id"
+            class="cpn tap-card list-rise"
+            :class="{ 'cpn--off': status !== 'UNUSED' }"
+            :style="{ animationDelay: Math.min(index, 8) * 50 + 'ms' }"
+            hover-class="press"
+            @tap="open(item)"
+          >
+            <view class="cpn__face" :class="index % 2 ? 'cpn__face--blue' : ''">
+              <text class="cpn__cur">¥</text>
+              <text class="cpn__val">{{ item.face }}</text>
+            </view>
+            <view class="cpn__main">
+              <text class="cpn__name">{{ item.name }}</text>
+              <text v-if="item.allianceName" class="cpn__alliance">{{ item.allianceName }}</text>
+              <text class="cpn__date" :class="{ 'cpn__date--urgent': isUrgent(item) }">
+                至 {{ item.expire }}{{ urgentText(item) }}
+              </text>
+            </view>
+            <view v-if="status === 'UNUSED'" class="cpn__act">亮码</view>
+            <text v-else class="pm-pill pm-pill--muted">{{ status === 'USED' ? '已用' : '已过期' }}</text>
+          </view>
+          <text v-if="loadingMore" class="more">正在加载…</text>
+          <text v-else-if="list.length >= total || list.length >= 50" class="more">没有更多了</text>
+        </template>
+      </view>
+    </view>
+
     <canvas canvas-id="qrCache" id="qrCache" class="qr-cache" />
     <qr-mask :visible="qrOpen" :code="qrCode" :image="qrImages[qrCode] || ''" @close="shutQr" />
   </view>
 </template>
 
 <style scoped>
-.page { min-height: 100vh; padding: 12rpx 32rpx 220rpx; box-sizing: border-box; background: #f3f7f8; }
-.nav { padding: 8rpx 0 20rpx; }
-.nav__title { font-size: 44rpx; font-weight: 800; letter-spacing: -1rpx; color: #0e1f26; }
-.tabs { display: flex; gap: 12rpx; }
-.tab {
-  flex: 1; text-align: center; padding: 18rpx 0; color: #8a9aa3; border-radius: 999rpx;
-  background: #fff; border: 1px solid #eaf0f2; font-size: 24rpx;
+.hero-top { display: flex; align-items: center; justify-content: space-between; }
+.hero-num { margin-top: 18rpx; }
+.hero-cap { display: block; margin-top: 10rpx; }
+
+.alert {
+  display: flex; align-items: center; gap: 14rpx;
+  padding: 18rpx 24rpx; margin-bottom: 18rpx;
+  border-radius: 24rpx; background: #fff6e8; border: 1rpx solid #ffe1b8;
 }
-.tab.is-on {
-  color: #fff; font-weight: 700;
-  background: linear-gradient(135deg, #00d6b2, #19a7f8); border-color: transparent;
+.alert__t { font-size: 24rpx; font-weight: 700; color: #a9670a; }
+.alert__d { margin-left: auto; font-size: 20rpx; color: #c98b2c; }
+
+.list { margin-top: 20rpx; }
+.skel-row { height: 168rpx; margin-bottom: 18rpx; }
+
+.cpn {
+  display: flex; align-items: center; gap: 22rpx;
+  background: #fff; border: 1rpx solid #eaf0f2; border-radius: 32rpx;
+  padding: 24rpx; margin-bottom: 18rpx;
+  box-shadow: 0 8rpx 28rpx rgba(10, 60, 58, 0.05);
 }
-.list { margin-top: 24rpx; }
+.cpn--off { opacity: 0.66; }
+.cpn__face {
+  width: 112rpx; height: 112rpx; border-radius: 26rpx; flex-shrink: 0;
+  background: linear-gradient(150deg, #e8fbf7, #c7f5eb);
+  color: #00766a; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+.cpn__face--blue {
+  background: linear-gradient(150deg, #eaf2ff, #d6e6ff);
+  color: #1c6dd0;
+}
+.cpn--off .cpn__face {
+  background: #f0f3f4; color: #8a9aa3;
+}
+.cpn__cur { font-size: 20rpx; line-height: 1; }
+.cpn__val { font-size: 40rpx; font-weight: 800; line-height: 1.15; }
+.cpn__main { flex: 1; min-width: 0; }
+.cpn__name { display: block; font-size: 30rpx; font-weight: 700; color: #0e1f26; }
+.cpn__alliance { display: block; margin-top: 6rpx; font-size: 22rpx; color: #00a08c; font-weight: 600; }
+.cpn__date { display: block; margin-top: 6rpx; font-size: 22rpx; color: #8a9aa3; }
+.cpn__date--urgent { color: #c0342f; font-weight: 700; }
+.cpn__act {
+  flex-shrink: 0; padding: 10rpx 22rpx; border-radius: 999rpx;
+  background: #07262f; color: #fff; font-size: 22rpx; font-weight: 700;
+}
+.more { display: block; text-align: center; color: #8a9aa3; font-size: 22rpx; padding: 24rpx 0; }
+.fail__t { font-size: 26rpx; color: #c0342f; line-height: 1.6; }
 .qr-cache { position: fixed; left: -400px; top: 0; width: 220px; height: 220px; pointer-events: none; }
-.card {
-  display: flex; align-items: center; gap: 20rpx;
-  background: #fff; border-radius: 40rpx; padding: 28rpx;
-  margin-bottom: 20rpx; box-shadow: 0 16rpx 48rpx rgba(10, 60, 58, 0.06);
-}
-.card__face {
-  width: 120rpx; height: 120rpx; border-radius: 36rpx;
-  background: linear-gradient(160deg, #00d6b2, #19a7f8); color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 32rpx; font-weight: 800;
-}
-.card__main { flex: 1; min-width: 0; }
-.card__name { display: block; font-weight: 700; font-size: 30rpx; color: #0e1f26; }
-.card__date { display: block; margin-top: 8rpx; color: #8a9aa3; font-size: 24rpx; }
-.card__act { color: #009784; font-weight: 700; font-size: 24rpx; }
-.more { display: block; text-align: center; color: #8a9aa3; padding: 24rpx 0; }
-.fail { color: #c22a2e; font-weight: 700; padding: 24rpx 0; }
 </style>

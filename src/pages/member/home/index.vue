@@ -10,6 +10,7 @@ import WalletPanel from '@/components/panels/WalletPanel.vue';
 import { useDeskStore } from '@/stores/desk';
 import { acceptInviteQuery, enableShareMenu, memberSharePath } from '@/utils/share';
 import { clearQrCanvas, disposeQrCache } from '@/utils/qrImage';
+import { restoreBrightness } from '@/utils/brightness';
 
 const desk = useDeskStore();
 const { member } = storeToRefs(desk);
@@ -32,8 +33,8 @@ watch(member, (key) => {
 }, { immediate: true });
 
 onShow(() => enableShareMenu());
-onHide(() => clearQrCanvas());
-onUnload(() => disposeQrCache());
+onHide(() => { clearQrCanvas(); restoreBrightness(); });
+onUnload(() => { disposeQrCache(); restoreBrightness(); });
 onPullDownRefresh(() => { desk.pull += 1; });
 onReachBottom(() => { desk.reach += 1; });
 

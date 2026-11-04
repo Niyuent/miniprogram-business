@@ -7,7 +7,7 @@ import SlideSheet from '@/components/SlideSheet.vue';
 import { useDeskStore } from '@/stores/desk';
 import { applyPageUrl, enableShareMenu, merchantInviteCode } from '@/utils/share';
 import { readSticky, writeSticky } from '@/utils/sticky';
-import { localMorningCopy, zeroBriefing } from '@/services/xiao-z';
+import { fetchBriefing, localMorningCopy } from '@/services/briefing';
 
 const CARD_KEY = 'mini_workbench_card';
 const RULE_TEXT = '把这张卡片发给其他老板，对方打开后进入入驻申请页。';
@@ -50,6 +50,20 @@ const kpiPoints = computed(() => desk.value?.today.pointsIssued ?? 0);
 const kpiRedeem = computed(() => desk.value?.today.redemptions ?? 0);
 const healthScore = computed(() => (finance.value?.has_data ? finance.value.score : null));
 const cashMonths = computed(() => finance.value?.cash_months ?? null);
+
+/** 今日日期（本地时区），摘要卡用真实日期而不是固定文案。 */
+const todayText = computed(() => {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+});
+
+/** 每笔核销平均发分：核销为 0 时返回 null，模板不渲染，避免除零显示 0 或 NaN。 */
+const avgPoints = computed(() => {
+  const n = kpiRedeem.value;
+  if (!n) return null;
+  return Math.round(kpiPoints.value / n);
+});
 
 function applyCard(card: WorkbenchCard) {
   desk.value = {
@@ -94,7 +108,7 @@ async function load(silent = false) {
     advice.value = local.advice;
     briefSource.value = 'fallback';
 
-    const brief = await zeroBriefing(workbench.storeName || workbench.merchantName);
+    const brief = await fetchBriefing(workbench.storeName || workbench.merchantName);
     if (brief.ok) {
       headline.value = brief.headline;
       advice.value = brief.advice;
@@ -137,6 +151,19 @@ function goEarn() {
 
 function goIssue() {
   uni.navigateTo({ url: '/pages/merchant/issue/index' });
+}
+
+function goSettlement() {
+  uni.navigateTo({ url: '/pages/merchant/settlement/index' });
+}
+
+/** 健康分有数据就去问小Z 要建议，没数据就引导补流水，不弹空页面。 */
+function openHealth() {
+  if (!finance.value?.has_data) {
+    guideFinance();
+    return;
+  }
+  goAi();
 }
 
 function previewApply() {
@@ -185,143 +212,150 @@ watch(
 </script>
 
 <template>
-  <view class="page">
-    <view class="nav">
-      <view class="pill">
-        <view class="dot" />
-        <text>{{ desk?.storeName || '门店' }}</text>
-      </view>
-      <view class="nav__acts">
-        <view class="icon-btn" @tap="inviteOpen = true">邀</view>
-        <view class="icon-btn" @tap="goAi">AI</view>
+  <view class="pm-page">
+    <view class="pm-hero">
+      <view class="pm-hero__glow" />
+      <view class="pm-hero__glow2" />
+      <view class="pm-hero__inner">
+        <view class="nav">
+          <view class="store-chip">
+            <view class="pm-hero__dot" />
+            <text class="store-chip__t">{{ desk?.storeName || '门店' }}</text>
+          </view>
+          <view class="nav-acts">
+            <view class="ghost-btn" hover-class="press" @tap="inviteOpen = true">邀</view>
+            <view class="ghost-btn" hover-class="press" @tap="goAi">AI</view>
+          </view>
+        </view>
+
+        <text class="greet">{{ greetLine }}</text>
+        <text class="headline">{{ loading ? '正在同步今日经营数据…' : headline }}</text>
+
+        <view class="pm-bignum hero-num">
+          <text class="pm-bignum__v">{{ kpiRedeem }}</text>
+          <text class="pm-bignum__u">今日核销笔数</text>
+        </view>
       </view>
     </view>
 
-    <view v-if="loading" class="skel">
-      <view class="skel__block" />
-      <view class="skel__row">
-        <view class="skel__card" />
-        <view class="skel__card" />
+    <view class="pm-body">
+      <view v-if="errorText" class="pm-card fail">
+        <text class="fail__t">{{ errorText }}</text>
       </view>
+
+      <view v-if="loading">
+        <view class="pm-card"><view class="pm-skel" style="height: 160rpx" /></view>
+        <view class="pm-card" style="margin-top: 20rpx"><view class="pm-skel" style="height: 120rpx" /></view>
+      </view>
+
+      <template v-else>
+        <view class="pm-card advice">
+          <view class="advice__hd">
+            <view class="pm-pill pm-pill--teal">AI 建议</view>
+            <text class="advice__src">{{ briefSource === 'zero' ? '在线' : '本地' }}</text>
+          </view>
+          <text class="advice__t">{{ advice }}</text>
+        </view>
+
+        <view class="pm-card stats-card">
+          <view class="pm-stats">
+            <view class="pm-stat">
+              <view class="pm-stat__v">{{ kpiRedeem }}</view>
+              <view class="pm-stat__l">今日核销</view>
+            </view>
+            <view class="pm-stat">
+              <view class="pm-stat__v">{{ kpiPoints }}</view>
+              <view class="pm-stat__l">今日发分</view>
+            </view>
+            <view class="pm-stat" hover-class="press" @tap="openHealth">
+              <view class="pm-stat__v" :class="{ 'pm-teal': healthScore != null }">{{ healthScore ?? '—' }}</view>
+              <view class="pm-stat__l">健康分</view>
+            </view>
+          </view>
+          <view class="stats-foot">
+            <text>{{ todayText }}</text>
+            <text v-if="cashMonths != null"> · 现金支撑 {{ cashMonths }} 月</text>
+            <text v-if="avgPoints != null"> · 均笔 {{ avgPoints }} 分</text>
+          </view>
+        </view>
+
+        <view class="pm-section">
+          <text class="pm-section__t">快捷操作</text>
+        </view>
+        <view class="pm-card quick">
+          <view class="q-item" hover-class="press" @tap="goVerify">
+            <view class="q-ico q-ico--teal">扫</view>
+            <text class="q-t">扫码核销</text>
+          </view>
+          <view class="q-item" hover-class="press" @tap="goEarn">
+            <view class="q-ico q-ico--blue">录</view>
+            <text class="q-t">录单发分</text>
+          </view>
+          <view class="q-item" hover-class="press" @tap="goIssue">
+            <view class="q-ico q-ico--warm">券</view>
+            <text class="q-t">发放券</text>
+          </view>
+          <view class="q-item" hover-class="press" @tap="goAi">
+            <view class="q-ico q-ico--dark">AI</view>
+            <text class="q-t">问小Z</text>
+          </view>
+        </view>
+
+        <view class="settle" hover-class="press" @tap="goSettlement">
+          <view class="settle__glow" />
+          <view class="settle__main">
+            <text class="settle__eyebrow">智能结算</text>
+            <text class="settle__t">对账账单</text>
+            <text class="settle__d">核销明细 · 确认与异议</text>
+          </view>
+          <view class="settle__badge">
+            <view class="pm-hero__dot" />
+            <text class="settle__badge-t">AI 已核完</text>
+          </view>
+        </view>
+
+        <view class="pm-section">
+          <text class="pm-section__t">经营待办</text>
+          <text class="pm-section__more">按紧急度</text>
+        </view>
+        <view class="pm-card pm-card--flush">
+          <view v-if="finance && !finance.has_data" class="todo" hover-class="press" @tap="guideFinance">
+            <view class="todo__dot todo__dot--warn" />
+            <view class="todo__main">
+              <view class="todo__t">补充经营流水</view>
+              <view class="todo__d">近 30 天没算到流水，健康分暂时给不出</view>
+            </view>
+            <text class="todo__act">去补 ›</text>
+          </view>
+          <view v-else-if="finance && finance.has_data" class="todo" hover-class="press" @tap="goAi">
+            <view class="todo__dot todo__dot--teal" />
+            <view class="todo__main">
+              <view class="todo__t">
+                健康分 {{ healthScore }}<text v-if="cashMonths != null"> · 现金支撑 {{ cashMonths }} 月</text>
+              </view>
+              <view class="todo__d">近 30 天经营诊断，可以要一份改进建议</view>
+            </view>
+            <text class="todo__act">看建议 ›</text>
+          </view>
+          <view class="todo" hover-class="press" @tap="goVerify">
+            <view class="todo__dot todo__dot--muted" />
+            <view class="todo__main">
+              <view class="todo__t">今日已核销 {{ kpiRedeem }} 笔</view>
+              <view class="todo__d">{{ kpiRedeem > 0 ? '继续扫下一张券' : '今天还没开单，点这里开始核销' }}</view>
+            </view>
+            <text class="todo__act">{{ kpiRedeem > 0 ? '去核销 ›' : '开单 ›' }}</text>
+          </view>
+          <view class="todo" hover-class="press" @tap="inviteOpen = true">
+            <view class="todo__dot todo__dot--muted" />
+            <view class="todo__main">
+              <view class="todo__t">邀请同行入驻</view>
+              <view class="todo__d">对方入驻开单后，你的联盟多一家店</view>
+            </view>
+            <text class="todo__act">邀请 ›</text>
+          </view>
+        </view>
+      </template>
     </view>
-
-    <template v-else>
-      <view v-if="errorText" class="banner">{{ errorText }}</view>
-
-      <view class="morning">
-        <view class="row1">
-          <view class="avatar">Z</view>
-          <view class="greet-wrap">
-            <view class="greet">{{ greetLine }}</view>
-            <view class="state">{{ briefSource === 'zero' ? 'AI 已就绪' : '本地经营摘要' }}</view>
-          </view>
-        </view>
-        <view class="headline">{{ headline }}</view>
-        <view class="advice">
-          <text class="bulb">建</text>
-          <text>{{ advice }}</text>
-        </view>
-        <view class="foot">
-          <text>核销 {{ kpiRedeem }} 笔</text>
-          <text>发积分 {{ kpiPoints }}</text>
-          <text v-if="healthScore != null">健康分 {{ healthScore }}</text>
-        </view>
-      </view>
-
-      <view class="kpi-hero">
-        <view class="label">
-          今日发积分
-          <text class="chip">实时</text>
-        </view>
-        <view class="big">{{ kpiPoints }}</view>
-        <view class="trend">
-          <text class="up">今日核销 {{ kpiRedeem }} 笔</text>
-          <text v-if="cashMonths != null" class="muted">· 现金支撑 {{ cashMonths }} 月</text>
-        </view>
-        <view class="bar">
-          <view class="bar__fill" :style="{ width: Math.min(100, kpiRedeem * 8 + 12) + '%' }" />
-        </view>
-      </view>
-
-      <view class="kpi-grid">
-        <view class="kpi-sm">
-          <view class="label">今日核销</view>
-          <view class="v">{{ kpiRedeem }}</view>
-          <view class="sub">扫码核销成功笔数</view>
-        </view>
-        <view class="kpi-sm" @tap="!finance?.has_data && guideFinance()">
-          <view class="label">健康分</view>
-          <view class="v teal">{{ healthScore ?? '—' }}</view>
-          <view class="sub">{{ finance?.has_data ? '近 30 天经营诊断' : '补流水后可计算' }}</view>
-        </view>
-      </view>
-
-      <view class="section">
-        <view class="section__title">快捷操作</view>
-      </view>
-      <view class="quick">
-        <view class="q-item" @tap="goVerify">
-          <view class="q-ico teal">扫</view>
-          <text>扫码核销</text>
-        </view>
-        <view class="q-item" @tap="goEarn">
-          <view class="q-ico blue">录</view>
-          <text>录单发积分</text>
-        </view>
-        <view class="q-item" @tap="goIssue">
-          <view class="q-ico purple">券</view>
-          <text>代金券发放</text>
-        </view>
-        <view class="q-item" @tap="goAi">
-          <view class="q-ico warm">AI</view>
-          <text>问小Z</text>
-        </view>
-      </view>
-
-      <view class="section">
-        <view class="section__title">AI 待办</view>
-        <text class="more">按紧急度</text>
-      </view>
-      <view class="card">
-        <view class="todo" @tap="goVerify">
-          <view class="ico warn">核</view>
-          <view class="main">
-            <view class="t">继续扫码核销</view>
-            <view class="d">今日已完成 {{ kpiRedeem }} 笔</view>
-          </view>
-          <text class="act">去核销</text>
-        </view>
-        <view class="todo" @tap="goAi">
-          <view class="ico ai">问</view>
-          <view class="main">
-            <view class="t">问小Z 今日经营</view>
-            <view class="d">{{ briefSource === 'zero' ? 'Zero 已接通' : '本地摘要可用' }}</view>
-          </view>
-          <text class="act">去问</text>
-        </view>
-        <view class="todo" @tap="inviteOpen = true">
-          <view class="ico invite">邀</view>
-          <view class="main">
-            <view class="t">邀请同行入驻</view>
-            <view class="d">分享申请链接给其他老板</view>
-          </view>
-          <text class="act">邀请</text>
-        </view>
-      </view>
-
-      <view class="section">
-        <view class="section__title">今日摘要</view>
-      </view>
-      <view class="card">
-        <view class="todo">
-          <view class="ico muted">汇</view>
-          <view class="main">
-            <view class="t">核销 {{ kpiRedeem }} · 发积分 {{ kpiPoints }}</view>
-            <view class="d">明细流水接口就绪后展示逐笔</view>
-          </view>
-        </view>
-      </view>
-    </template>
 
     <slide-sheet :visible="inviteOpen" @close="inviteOpen = false">
       <view class="sheet__title">邀请入驻</view>
@@ -334,119 +368,116 @@ watch(
 </template>
 
 <style scoped>
-.page { min-height: 100vh; padding: 12rpx 32rpx 220rpx; box-sizing: border-box; background: #f3f7f8; }
-.nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; }
-.pill {
-  display: inline-flex; align-items: center; gap: 12rpx;
-  background: #fff; border: 1px solid #eaf0f2; padding: 14rpx 24rpx;
-  border-radius: 999rpx; font-size: 26rpx; font-weight: 600;
-  box-shadow: 0 8rpx 24rpx rgba(10, 60, 58, 0.05); max-width: 70%;
+/* ---------- 首屏 ---------- */
+.nav { display: flex; align-items: center; justify-content: space-between; }
+.store-chip {
+  display: inline-flex; align-items: center; gap: 10rpx;
+  padding: 8rpx 20rpx; border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1rpx solid rgba(255, 255, 255, 0.16);
 }
-.dot { width: 14rpx; height: 14rpx; border-radius: 50%; background: #00b8a0; box-shadow: 0 0 0 6rpx rgba(0,184,160,.18); flex-shrink: 0; }
-.nav__acts { display: flex; gap: 12rpx; }
-.icon-btn {
-  width: 72rpx; height: 72rpx; border-radius: 50%; background: #fff; border: 1px solid #eaf0f2;
-  display: flex; align-items: center; justify-content: center; font-size: 24rpx; font-weight: 800; color: #00766a;
+.store-chip__t { font-size: 20rpx; color: #d8f7f1; }
+.nav-acts { display: flex; gap: 12rpx; }
+.ghost-btn {
+  width: 60rpx; height: 60rpx; border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1rpx solid rgba(255, 255, 255, 0.16);
+  color: #d8f7f1; font-size: 22rpx;
+  display: flex; align-items: center; justify-content: center;
 }
-.morning {
-  position: relative; border-radius: 48rpx; padding: 36rpx 32rpx 28rpx;
-  background: linear-gradient(135deg, #00c9a7 0%, #2e90ff 100%); color: #fff;
-  box-shadow: 0 32rpx 80rpx rgba(0, 88, 80, 0.14); overflow: hidden; margin-bottom: 20rpx;
+.greet { display: block; margin-top: 30rpx; font-size: 34rpx; font-weight: 700; color: #fff; }
+.headline {
+  display: block; margin-top: 12rpx; font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.66); line-height: 1.55;
 }
-.row1 { display: flex; align-items: center; gap: 16rpx; position: relative; z-index: 2; }
-.avatar {
-  width: 80rpx; height: 80rpx; border-radius: 24rpx;
-  background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.35);
-  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 32rpx;
+.hero-num { margin-top: 26rpx; }
+
+/* ---------- AI 建议 ---------- */
+.advice__hd { display: flex; align-items: center; justify-content: space-between; }
+.advice__src { font-size: 20rpx; color: #b3c0c7; }
+.advice__t {
+  display: block; margin-top: 14rpx; font-size: 26rpx;
+  color: #33454f; line-height: 1.6;
 }
-.greet { font-size: 30rpx; font-weight: 700; }
-.state { font-size: 22rpx; opacity: .85; margin-top: 4rpx; }
-.headline { position: relative; z-index: 2; margin-top: 24rpx; font-size: 30rpx; line-height: 1.5; font-weight: 600; }
-.advice {
-  position: relative; z-index: 2; margin-top: 20rpx;
-  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25);
-  border-radius: 28rpx; padding: 18rpx 22rpx; font-size: 24rpx; line-height: 1.55;
-  display: flex; gap: 12rpx;
+
+/* ---------- 指标 ---------- */
+.stats-card { padding: 30rpx 16rpx 22rpx; }
+.stats-foot {
+  margin-top: 20rpx; padding-top: 18rpx; border-top: 1rpx solid #f2f6f7;
+  text-align: center; font-size: 20rpx; color: #b3c0c7;
 }
-.bulb {
-  width: 40rpx; height: 40rpx; border-radius: 12rpx; background: rgba(255,255,255,.25);
-  display: flex; align-items: center; justify-content: center; font-size: 20rpx; font-weight: 800; flex-shrink: 0;
-}
-.foot {
-  position: relative; z-index: 2; margin-top: 20rpx; display: flex; gap: 20rpx;
-  font-size: 22rpx; opacity: .9; flex-wrap: wrap;
-}
-.kpi-hero {
-  background: #fff; border-radius: 48rpx; padding: 28rpx; margin-bottom: 16rpx;
-  box-shadow: 0 16rpx 48rpx rgba(10, 60, 58, 0.08);
-}
-.label { color: #8a9aa3; font-size: 24rpx; display: flex; align-items: center; gap: 12rpx; }
-.chip {
-  display: inline-flex; padding: 4rpx 14rpx; border-radius: 999rpx;
-  background: #e8fbf7; color: #00766a; font-size: 20rpx; font-weight: 700;
-}
-.big { margin-top: 12rpx; font-size: 72rpx; font-weight: 800; color: #0e1f26; letter-spacing: -2rpx; }
-.trend { margin-top: 8rpx; display: flex; gap: 12rpx; align-items: center; flex-wrap: wrap; }
-.up { color: #009784; font-weight: 700; font-size: 24rpx; }
-.muted { color: #8a9aa3; font-size: 24rpx; }
-.bar { height: 16rpx; border-radius: 12rpx; background: #eff4f5; margin-top: 20rpx; overflow: hidden; }
-.bar__fill { height: 100%; border-radius: 12rpx; background: linear-gradient(135deg, #00d6b2, #19a7f8); }
-.kpi-grid { display: flex; gap: 16rpx; margin-bottom: 8rpx; }
-.kpi-sm {
-  flex: 1; background: #fff; border-radius: 40rpx; padding: 24rpx;
-  box-shadow: 0 16rpx 48rpx rgba(10, 60, 58, 0.06);
-}
-.kpi-sm .v { margin-top: 8rpx; font-size: 40rpx; font-weight: 800; color: #0e1f26; }
-.kpi-sm .v.teal { color: #009784; }
-.kpi-sm .sub { margin-top: 8rpx; color: #8a9aa3; font-size: 22rpx; }
-.section { display: flex; align-items: center; justify-content: space-between; padding: 28rpx 4rpx 12rpx; }
-.section__title { font-size: 32rpx; font-weight: 700; color: #0e1f26; }
-.more { color: #8a9aa3; font-size: 24rpx; }
-.quick { display: flex; gap: 12rpx; }
-.q-item {
-  flex: 1; background: #fff; border-radius: 32rpx; padding: 20rpx 8rpx;
-  display: flex; flex-direction: column; align-items: center; gap: 12rpx;
-  font-size: 22rpx; color: #33454f; font-weight: 600;
-  box-shadow: 0 8rpx 24rpx rgba(10, 60, 58, 0.05);
-}
+
+/* ---------- 快捷 ---------- */
+.quick { display: flex; padding: 26rpx 12rpx; }
+.q-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 12rpx; }
 .q-ico {
-  width: 72rpx; height: 72rpx; border-radius: 24rpx;
-  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 26rpx;
+  width: 84rpx; height: 84rpx; border-radius: 26rpx;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26rpx; font-weight: 800;
 }
-.q-ico.teal { background: linear-gradient(135deg, #e6f9f6, #bff3ea); color: #00766a; }
-.q-ico.blue { background: linear-gradient(135deg, #e8f2ff, #c9e2ff); color: #0f5fbf; }
-.q-ico.purple { background: linear-gradient(135deg, #f0ebff, #d9d0ff); color: #5b3ce0; }
-.q-ico.warm { background: linear-gradient(135deg, #fff0e6, #ffdcc4); color: #b26b00; }
-.card {
-  background: #fff; border-radius: 40rpx; padding: 8rpx 24rpx;
-  box-shadow: 0 16rpx 48rpx rgba(10, 60, 58, 0.06);
+.q-ico--teal { background: #e8fbf7; color: #00766a; }
+.q-ico--blue { background: #eaf2ff; color: #1c6dd0; }
+.q-ico--warm { background: #fff6e8; color: #a9670a; }
+.q-ico--dark { background: #07262f; color: #7ff0dd; }
+.q-t { font-size: 22rpx; color: #33454f; }
+
+/* ---------- 结算入口 ---------- */
+.settle {
+  position: relative; overflow: hidden;
+  margin-top: 24rpx; padding: 30rpx;
+  border-radius: 36rpx;
+  background: linear-gradient(135deg, #09303a 0%, #0b2440 100%);
+  box-shadow: 0 20rpx 48rpx rgba(0, 60, 70, 0.22);
+  display: flex; align-items: center;
 }
+.settle__glow {
+  position: absolute; right: -100rpx; top: -120rpx;
+  width: 320rpx; height: 320rpx; border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 214, 178, 0.3) 0%, rgba(0, 214, 178, 0) 70%);
+}
+.settle__main { position: relative; z-index: 2; flex: 1; min-width: 0; }
+.settle__eyebrow { display: block; font-size: 20rpx; color: #7ff0dd; letter-spacing: 2rpx; }
+.settle__t { display: block; margin-top: 8rpx; font-size: 32rpx; font-weight: 700; color: #fff; }
+.settle__d { display: block; margin-top: 8rpx; font-size: 20rpx; color: rgba(255, 255, 255, 0.5); }
+.settle__badge {
+  position: relative; z-index: 2; flex-shrink: 0;
+  display: flex; align-items: center; gap: 8rpx;
+  padding: 8rpx 16rpx; border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1rpx solid rgba(255, 255, 255, 0.16);
+}
+.settle__badge-t { font-size: 18rpx; color: #d8f7f1; }
+
+/* ---------- 待办 ---------- */
 .todo {
-  display: flex; align-items: center; gap: 16rpx; padding: 24rpx 0;
-  border-bottom: 1px solid #eaf0f2;
+  display: flex; align-items: center; gap: 18rpx;
+  padding: 26rpx 30rpx;
 }
-.todo:last-child { border-bottom: none; }
-.ico {
-  width: 72rpx; height: 72rpx; border-radius: 22rpx;
-  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 24rpx;
+.todo + .todo { border-top: 1rpx solid #f2f6f7; }
+.todo__dot { width: 12rpx; height: 12rpx; border-radius: 50%; flex-shrink: 0; }
+.todo__dot--warn { background: #ff9f1c; }
+.todo__dot--teal { background: #00d6b2; }
+.todo__dot--muted { background: #d4e0e4; }
+.todo__main { flex: 1; min-width: 0; }
+.todo__t { font-size: 26rpx; font-weight: 600; color: #0e1f26; }
+.todo__d { margin-top: 6rpx; font-size: 22rpx; color: #8a9aa3; line-height: 1.45; }
+.todo__act { flex-shrink: 0; font-size: 22rpx; color: #00a08c; font-weight: 700; }
+
+/* ---------- 邀请抽屉 ---------- */
+.sheet__title { font-size: 32rpx; font-weight: 800; color: #0e1f26; }
+.sheet__code {
+  margin-top: 20rpx; padding: 26rpx; border-radius: 24rpx;
+  background: #07262f; color: #7ff0dd;
+  font-size: 40rpx; font-weight: 800; text-align: center; letter-spacing: 6rpx;
 }
-.ico.warn { background: #ffecec; color: #c22a2e; }
-.ico.ai { background: #e8fbf7; color: #00766a; }
-.ico.invite { background: #e8f2ff; color: #0f5fbf; }
-.ico.muted { background: #f1f5f7; color: #6d818b; }
-.main { flex: 1; min-width: 0; }
-.t { font-size: 28rpx; font-weight: 700; color: #0e1f26; }
-.d { margin-top: 4rpx; color: #8a9aa3; font-size: 22rpx; }
-.act { color: #009784; font-weight: 700; font-size: 24rpx; }
-.banner { margin-bottom: 16rpx; padding: 16rpx 20rpx; background: #ffecec; color: #c22a2e; border-radius: 20rpx; }
-.skel__block { height: 280rpx; border-radius: 48rpx; background: #e2eaee; margin-bottom: 16rpx; }
-.skel__row { display: flex; gap: 16rpx; }
-.skel__card { flex: 1; height: 160rpx; border-radius: 32rpx; background: #e2eaee; }
-.sheet__title { font-size: 34rpx; font-weight: 700; }
-.sheet__code { margin-top: 16rpx; font-size: 56rpx; font-weight: 800; letter-spacing: 2rpx; color: #00b8a0; }
-.sheet__hint { margin: 12rpx 0 24rpx; color: #8a9aa3; line-height: 1.6; }
+.sheet__hint { margin-top: 16rpx; font-size: 22rpx; color: #8a9aa3; line-height: 1.6; }
 .sheet-btn {
-  background: #0e1f26; color: #fff; border-radius: 999rpx; font-weight: 700; margin-bottom: 16rpx;
+  margin-top: 24rpx; height: 88rpx; line-height: 88rpx;
+  border-radius: 999rpx; background: linear-gradient(135deg, #00d6b2, #19a7f8);
+  color: #fff; font-size: 28rpx; font-weight: 700;
 }
+.sheet-btn::after { border: none; }
 .sheet-btn.ghost { background: #f1f5f7; color: #33454f; }
+
+.fail__t { font-size: 26rpx; color: #c0342f; line-height: 1.6; }
 </style>

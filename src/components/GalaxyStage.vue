@@ -33,7 +33,7 @@ function pick(id: number, role: 'center' | 'planet') {
 
 <template>
   <view class="sky" :class="{ 'is-tall': tall }">
-    <view v-for="n in 8" :key="n" class="star" :class="'star--' + n" />
+    <view v-for="n in 6" :key="n" class="star" :class="'star--' + n" />
     <view class="ring ring--a" />
     <view class="ring ring--b" />
     <view v-if="chart" class="sun" hover-class="press" @tap="pick(chart.center.id, 'center')">
@@ -78,6 +78,7 @@ function pick(id: number, role: 'center' | 'planet') {
   background: #fff;
   opacity: 0.45;
   animation: twinkle 3.6s ease-in-out infinite;
+  will-change: opacity;
 }
 .star--1 { left: 12%; top: 18%; }
 .star--2 { left: 78%; top: 14%; animation-delay: .4s; }
@@ -85,8 +86,6 @@ function pick(id: number, role: 'center' | 'planet') {
 .star--4 { left: 8%; top: 70%; animation-delay: 1.1s; }
 .star--5 { left: 24%; top: 30%; width: 4rpx; height: 4rpx; }
 .star--6 { left: 66%; top: 28%; animation-delay: .6s; }
-.star--7 { left: 48%; top: 12%; width: 4rpx; height: 4rpx; animation-delay: 1.4s; }
-.star--8 { left: 34%; top: 78%; animation-delay: .2s; }
 .ring {
   position: absolute;
   left: 50%;
@@ -94,6 +93,7 @@ function pick(id: number, role: 'center' | 'planet') {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 50%;
   pointer-events: none;
+  will-change: transform;
 }
 .ring--a {
   width: 520rpx;
@@ -136,6 +136,7 @@ function pick(id: number, role: 'center' | 'planet') {
   background: radial-gradient(circle at 35% 30%, #7dd3fc, #1d4ed8 55%, #0b1b36 100%);
   box-shadow: 0 0 40rpx rgba(59, 130, 246, 0.85);
   animation: breathe 4.8s ease-in-out infinite;
+  will-change: transform;
 }
 .sun__name, .sun__meta { position: relative; z-index: 1; }
 .sun__name { font-size: 26rpx; font-weight: 800; line-height: 1.2; padding: 0 12rpx; }

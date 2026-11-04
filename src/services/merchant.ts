@@ -1,4 +1,5 @@
 import { request } from '@/utils/request';
+import { parseScannedMember, type ScannedMember } from '@/utils/memberQr';
 
 export interface WorkbenchData {
   greeting: string;
@@ -22,7 +23,47 @@ export interface IssueOptions {
   merchantId: number;
   merchantName: string;
   onlyMainCoupons: boolean;
+  /** 主体或已授权附属可快速新建券 */
+  canQuickCreate?: boolean;
   merchants: IssueMerchantOption[];
+}
+
+export function quickIssueCoupon(body: {
+  name?: string;
+  /** VOUCHER=金额减免；ITEM=到店兑换物品 */
+  benefitType?: 'VOUCHER' | 'ITEM';
+  itemName?: string;
+  faceValue?: number;
+  thresholdAmount?: number;
+  validDays: number;
+  totalStock: number;
+  targetMerchantIds?: number[];
+  audience?: 'USER' | 'MERCHANT_VISITORS';
+  userId?: number;
+  phone?: string;
+  quantity?: number;
+  allMerchants?: boolean;
+}) {
+  return request<{
+    templateId: number;
+    name: string;
+    benefitType?: 'VOUCHER' | 'ITEM';
+    itemName?: string | null;
+    faceValue: number;
+    thresholdAmount: number;
+    validDays: number;
+    totalStock: number;
+    status: string;
+    issued: boolean;
+    message: string;
+    issueError?: string;
+    issue?: unknown;
+  }>({
+    url: '/coupons/quick-issue',
+    method: 'POST',
+    data: body,
+    redirectOn401: false,
+  });
 }
 
 export function fetchIssueOptions() {
@@ -76,15 +117,25 @@ export function fetchWorkbench() {
   return request<WorkbenchData>({ url: '/mini/workbench' });
 }
 
-export function fetchMemberDesk(userId: number) {
+/** 扫会员码后的收银台。优先传票据（5 分钟有效）；userId 仅兼容旧版永久码。 */
+export function fetchMemberDesk(target: ScannedMember) {
+  const query = target.ticket
+    ? `ticket=${encodeURIComponent(target.ticket)}`
+    : `userId=${target.userId}`;
   return request<MemberDesk>({
-    url: `/mini/member-desk?userId=${userId}`,
+    url: `/mini/member-desk?${query}`,
     redirectOn401: false,
   });
 }
 
+/** 把扫码原文解析成会员标识；不是会员码返回 null。 */
+export function toScannedMember(raw: string): ScannedMember | null {
+  return parseScannedMember(raw);
+}
+
 export function exchangeForMember(body: {
   userId: number;
+  allianceId: number;
   templateId: number;
   requestId: string;
 }) {
@@ -132,8 +183,10 @@ export function redeemCoupon(body: {
   storeId?: number | null;
   orderAmount: number;
   orderNo: string;
+  /** 幂等键：一次确认生成一个，重试复用；同键返回首次结果（idempotent:true）而非 409 */
+  requestId?: string;
 }) {
-  return request<{ id: number }>({
+  return request<{ id: number; idempotent?: boolean }>({
     url: '/redemptions',
     method: 'POST',
     data: {
@@ -141,6 +194,7 @@ export function redeemCoupon(body: {
       orderAmount: body.orderAmount,
       orderNo: body.orderNo,
       ...(body.storeId ? { storeId: body.storeId } : {}),
+      ...(body.requestId ? { requestId: body.requestId } : {}),
       channel: 'SCAN',
       orderSource: 'APPLET',
     },
@@ -177,9 +231,22 @@ export function createConsumeOrder(body: {
   });
 }
 
-export function fetchMaskedMember(userId: number) {
-  return request<{ name: string; phone: string; userId: number }>({
-    url: `/users/${userId}/masked-info`,
+export interface MerchantAllianceItem {
+  allianceId: number;
+  name: string;
+  role: 'MAIN' | 'SUB';
+  mainMerchantId: number;
+  sampleMerchants: { merchantId: number; name: string; role: 'MAIN' | 'SUB' }[];
+  peerMerchantCount: number;
+}
+
+export function fetchMerchantAlliances(merchantId: number) {
+  return request<{
+    merchantId: number;
+    merchantName: string;
+    items: MerchantAllianceItem[];
+  }>({
+    url: `/merchants/${merchantId}/alliances`,
     redirectOn401: false,
   });
 }
@@ -187,16 +254,26 @@ export function fetchMaskedMember(userId: number) {
 export function earnPoints(body: {
   userId: number;
   amount: number;
+  allianceId: number;
   orderId?: number;
   requestId?: string;
   storeId?: number | null;
 }) {
-  return request<{ earned: boolean; points: number; reasonCode?: string; message?: string }>({
+  return request<{
+    earned: boolean;
+    points: number;
+    allianceId?: number;
+    allianceName?: string;
+    sourceRole?: string;
+    reasonCode?: string;
+    message?: string;
+  }>({
     url: '/points/earn',
     method: 'POST',
     data: {
       userId: body.userId,
       amount: body.amount,
+      allianceId: body.allianceId,
       ...(body.orderId ? { orderId: body.orderId } : {}),
       ...(body.requestId ? { requestId: body.requestId } : {}),
       storeId: body.storeId ?? undefined,

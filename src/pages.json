@@ -1,6 +1,7 @@
 {
   // 微信原生 tabBar 的 list 最多 5 项，会员 4 项与商家 4 项不能放进同一份配置。
   // 两套底部菜单在 components/AppTabBar.vue 里按 bootstrap 返回的 role / tabs 切换。
+  // 导航栏全局深墨 + 白字：与各页深色首屏连成一片，避免上沿出现一条断层。
   "pages": [
     {
       "path": "pages/login/index",
@@ -12,7 +13,7 @@
     },
     {
       "path": "pages/member/wallet/index",
-      "style": { "navigationBarTitleText": "卡包", "enableShareAppMessage": true, "enableShareTimeline": true }
+      "style": { "navigationBarTitleText": "卡包" }
     },
     {
       "path": "pages/member/mall/index",
@@ -28,14 +29,7 @@
     },
     {
       "path": "pages/member/galaxy/index",
-      "style": {
-        "navigationBarTitleText": "周围联盟",
-        "navigationBarBackgroundColor": "#f3f7f8",
-        "navigationBarTextStyle": "black",
-        "backgroundColor": "#f3f7f8",
-        "enablePullDownRefresh": true,
-        "backgroundTextStyle": "dark"
-      }
+      "style": { "navigationBarTitleText": "周围联盟", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
     },
     {
       "path": "pages/member/points/index",
@@ -43,7 +37,7 @@
     },
     {
       "path": "pages/member/qrcode/index",
-      "style": { "navigationBarTitleText": "我的会员码" }
+      "style": { "navigationBarTitleText": "我的会员码", "navigationBarBackgroundColor": "#04161d", "backgroundColor": "#04161d" }
     },
     {
       "path": "pages/apply/index",
@@ -59,20 +53,28 @@
           "style": { "navigationBarTitleText": "首页", "enableShareAppMessage": true, "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
         },
         { "path": "verify/index", "style": { "navigationBarTitleText": "核销" } },
-        { "path": "earn/index", "style": { "navigationBarTitleText": "录单发积分", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" } },
+        { "path": "earn/index", "style": { "navigationBarTitleText": "录单发积分", "enableShareAppMessage": true, "enablePullDownRefresh": true, "backgroundTextStyle": "dark" } },
         { "path": "redeem/index", "style": { "navigationBarTitleText": "核销" } },
         { "path": "notice/index", "style": { "navigationBarTitleText": "通知" } },
         { "path": "mine/index", "style": { "navigationBarTitleText": "我的" } },
         { "path": "staff/index", "style": { "navigationBarTitleText": "店员与权限", "enableShareAppMessage": true } },
-        { "path": "marketing/index", "style": { "navigationBarTitleText": "营销与卡券", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" } },
-        { "path": "issue/index", "style": { "navigationBarTitleText": "发放代金券" } }
+        { "path": "marketing/index", "style": { "navigationBarTitleText": "营销与卡券", "enableShareAppMessage": true, "enablePullDownRefresh": true, "backgroundTextStyle": "dark" } },
+        { "path": "issue/index", "style": { "navigationBarTitleText": "发放代金券" } },
+        {
+          "path": "settlement/index",
+          "style": { "navigationBarTitleText": "智能结算", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
+        },
+        {
+          "path": "settlement/detail",
+          "style": { "navigationBarTitleText": "账单详情" }
+        }
       ]
     }
   ],
   "globalStyle": {
-    "navigationBarTextStyle": "black",
+    "navigationBarTextStyle": "white",
     "navigationBarTitleText": "小Z",
-    "navigationBarBackgroundColor": "#f3f7f8",
+    "navigationBarBackgroundColor": "#07262f",
     "backgroundColor": "#f3f7f8",
     "onReachBottomDistance": 80
   }

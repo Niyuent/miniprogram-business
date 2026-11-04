@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useSessionStore } from '@/stores/session';
 import { loginMerchantAndRoute, MERCHANT_TEST_ACCOUNTS } from '@/services/auth';
-import { fetchMe, fetchPointAccount } from '@/services/member';
+import { fetchMe, fetchPointAccount, type AlliancePointAccount } from '@/services/member';
 import { friendlyMessage } from '@/utils/errors';
 import { useDeskStore } from '@/stores/desk';
 import { useWalletStore } from '@/stores/wallet';
@@ -19,8 +19,37 @@ const name = ref('');
 const avatar = ref('');
 const balance = ref(0);
 const unused = ref(0);
+const pointAccounts = ref<AlliancePointAccount[]>([]);
 const errorText = ref('');
 const switching = ref('');
+
+/** 累计获得积分：只增不减，作为身份分级依据，消费兑换都不影响。 */
+const totalEarned = computed(() =>
+  pointAccounts.value.reduce((sum, item) => sum + (item.totalEarned || 0), 0),
+);
+
+/**
+ * 三级身份 + 到下一级的进度。
+ * 阈值只是身份感，不承诺任何折扣权益，避免运营侧兑现不了。
+ */
+const level = computed(() => {
+  const earned = totalEarned.value;
+  if (earned >= 2000) return { text: '老友', next: '', need: 0, pct: 100 };
+  if (earned >= 500) {
+    return {
+      text: '熟客',
+      next: '老友',
+      need: 2000 - earned,
+      pct: Math.min(99, Math.round((earned / 2000) * 100)),
+    };
+  }
+  return {
+    text: earned > 0 ? '常客' : '新会员',
+    next: earned > 0 ? '熟客' : '常客',
+    need: 500 - earned,
+    pct: Math.round((earned / 500) * 100),
+  };
+});
 
 function applyCard(card: MemberCard) {
   name.value = card.name || '会员';
@@ -37,7 +66,12 @@ async function load(silent = false) {
     rememberMember(me.id);
     name.value = me.nickname || session.profileName || '会员';
     avatar.value = me.avatar || session.avatar || '';
-    balance.value = account.summary?.available ?? account.account.balance;
+    pointAccounts.value = account.accounts?.length ? account.accounts : [];
+    balance.value =
+      account.summary?.totalBalance ??
+      pointAccounts.value.reduce((s, a) => s + a.balance, 0) ??
+      account.summary?.available ??
+      account.account.balance;
     await useWalletStore().warm('UNUSED').catch(() => undefined);
     unused.value = useWalletStore().snapshot('UNUSED').total || 0;
     session.profileName = name.value;
@@ -110,138 +144,160 @@ watch(
 </script>
 
 <template>
-  <view class="page">
-    <view class="hero">
-      <view class="hero__row">
-        <image v-if="avatar" class="avatar" :src="avatar" mode="aspectFill" lazy-load />
-        <view v-else class="avatar avatar--ph">{{ name.slice(0, 1) }}</view>
-        <view class="meta">
-          <view class="name">{{ name }}</view>
-          <view class="sub">黄金会员 · 积分 {{ balance }}</view>
+  <view class="pm-page">
+    <view class="pm-hero pm-hero--short">
+      <view class="pm-hero__glow" />
+      <view class="pm-hero__glow2" />
+      <view class="pm-hero__inner">
+        <view class="me-row">
+          <image v-if="avatar" class="me-avatar" :src="avatar" mode="aspectFill" lazy-load />
+          <view v-else class="me-avatar">{{ name.slice(0, 1) }}</view>
+          <view class="me-main">
+            <text class="pm-hero__title">{{ name }}</text>
+            <text class="me-sub">{{ level.text }} · 累计获得 {{ totalEarned }} 分</text>
+          </view>
+          <view class="pm-hero__chip">
+            <view class="pm-hero__dot" />
+            <text>会员</text>
+          </view>
         </view>
       </view>
     </view>
 
-    <view v-if="loading" class="skel" />
-    <template v-else>
-      <view v-if="errorText" class="fail">{{ errorText }}</view>
-      <view class="card stats">
-        <view class="stat" @tap="go('/pages/member/points/index')">
-          <view class="num">{{ balance }}</view>
-          <view class="lab">积分</view>
-        </view>
-        <view class="stat" @tap="goWallet">
-          <view class="num">{{ unused }}</view>
-          <view class="lab">待用券</view>
-        </view>
-        <view class="stat" @tap="goHome">
-          <view class="num">码</view>
-          <view class="lab">会员码</view>
-        </view>
+    <view class="pm-body">
+      <view v-if="loading" class="pm-card">
+        <view class="pm-skel" style="height: 120rpx" />
       </view>
+      <template v-else>
+        <view v-if="errorText" class="pm-card fail">
+          <text class="fail__t">{{ errorText }}</text>
+        </view>
 
-      <view class="card list">
-        <view class="row" @tap="goHome">
-          <view class="ico">码</view>
-          <view class="row__main">
-            <view class="t">我的会员码</view>
-            <view class="d">到店出示，店员扫码录积分</view>
+        <view class="pm-card growth" @tap="go('/pages/member/points/index')">
+          <view class="growth__top">
+            <text class="growth__l">
+              {{ level.next ? `距${level.next}还差 ${level.need} 分` : '已是最高等级' }}
+            </text>
+            <text class="growth__p">{{ level.pct }}%</text>
           </view>
-          <text class="act">打开</text>
-        </view>
-        <view class="row" @tap="go('/pages/member/points/index')">
-          <view class="ico">分</view>
-          <view class="row__main">
-            <view class="t">积分明细</view>
-            <view class="d">查看收支流水</view>
+          <view class="pm-bar growth__bar">
+            <view class="pm-bar__fill" :style="{ width: level.pct + '%' }" />
           </view>
-          <text class="act">查看</text>
+          <text class="growth__hint">等级按累计获得积分计算，消费和兑换都不减分</text>
         </view>
-        <view class="row" @tap="goWallet">
-          <view class="ico">券</view>
-          <view class="row__main">
-            <view class="t">我的卡包</view>
-            <view class="d">{{ unused }} 张待用</view>
-          </view>
-          <text class="act">查看</text>
-        </view>
-        <view class="row" @tap="go('/pages/member/galaxy/index')">
-          <view class="ico">盟</view>
-          <view class="row__main">
-            <view class="t">周围商家联盟</view>
-            <view class="d">看看联盟里有哪些店</view>
-          </view>
-          <text class="act">打开</text>
-        </view>
-      </view>
 
-      <view class="label">开发：直接进入商家</view>
-      <view
-        v-for="item in MERCHANT_TEST_ACCOUNTS"
-        :key="item.username"
-        class="dev-row"
-        @tap="enterMerchant(item.username)"
-      >
-        <text>{{ item.label }} · {{ item.hint }}</text>
-        <text>{{ switching === item.username ? '进入中' : '进入' }}</text>
-      </view>
+        <view class="pm-card stats-card">
+          <view class="pm-stats">
+            <view class="pm-stat" hover-class="press" @tap="go('/pages/member/points/index')">
+              <view class="pm-stat__v">{{ balance }}</view>
+              <view class="pm-stat__l">可用积分</view>
+            </view>
+            <view class="pm-stat" hover-class="press" @tap="goWallet">
+              <view class="pm-stat__v">{{ unused }}</view>
+              <view class="pm-stat__l">待用券</view>
+            </view>
+            <view class="pm-stat" hover-class="press" @tap="goHome">
+              <view class="pm-stat__v">码</view>
+              <view class="pm-stat__l">去亮码</view>
+            </view>
+          </view>
+        </view>
 
-      <button class="logout" hover-class="press" @tap="logout">退出登录</button>
-    </template>
+        <view class="pm-section">
+          <text class="pm-section__t">我的</text>
+        </view>
+        <view class="pm-card pm-card--flush">
+          <view class="pm-row" hover-class="press" @tap="goHome">
+            <view class="row-ico">码</view>
+            <view class="pm-row__main">
+              <view class="pm-row__t">我的会员码</view>
+              <view class="pm-row__d">到店出示，店员扫码录积分</view>
+            </view>
+            <text class="pm-row__x">›</text>
+          </view>
+          <view class="pm-row" hover-class="press" @tap="go('/pages/member/points/index')">
+            <view class="row-ico row-ico--blue">分</view>
+            <view class="pm-row__main">
+              <view class="pm-row__t">积分明细</view>
+              <view class="pm-row__d">查看收支流水与即将过期积分</view>
+            </view>
+            <text class="pm-row__x">›</text>
+          </view>
+          <view class="pm-row" hover-class="press" @tap="goWallet">
+            <view class="row-ico row-ico--warm">券</view>
+            <view class="pm-row__main">
+              <view class="pm-row__t">我的卡包</view>
+              <view class="pm-row__d">{{ unused }} 张待用</view>
+            </view>
+            <text class="pm-row__x">›</text>
+          </view>
+          <view class="pm-row" hover-class="press" @tap="go('/pages/member/galaxy/index')">
+            <view class="row-ico">盟</view>
+            <view class="pm-row__main">
+              <view class="pm-row__t">周围商家联盟</view>
+              <view class="pm-row__d">看看联盟里有哪些店</view>
+            </view>
+            <text class="pm-row__x">›</text>
+          </view>
+        </view>
+
+        <block v-if="MERCHANT_TEST_ACCOUNTS.length">
+          <view class="pm-section">
+            <text class="pm-section__t">开发：直接进入商家</text>
+          </view>
+          <view class="pm-card pm-card--flush">
+            <view
+              v-for="item in MERCHANT_TEST_ACCOUNTS"
+              :key="item.username"
+              class="pm-row"
+              hover-class="press"
+              @tap="enterMerchant(item.username)"
+            >
+              <view class="pm-row__main">
+                <view class="pm-row__t">{{ item.label }}</view>
+                <view class="pm-row__d">{{ item.hint }}</view>
+              </view>
+              <text class="pm-row__x">{{ switching === item.username ? '进入中' : '进入 ›' }}</text>
+            </view>
+          </view>
+        </block>
+
+        <view class="pm-btn pm-btn--ghost logout" hover-class="press" @tap="logout">退出登录</view>
+        <view class="foot-hint">小Z 随身版 · 商盟会员服务</view>
+      </template>
+    </view>
   </view>
 </template>
 
 <style scoped>
-.page { min-height: 100vh; padding-bottom: 220rpx; box-sizing: border-box; background: #f3f7f8; }
-.hero {
-  padding: 28rpx 32rpx 72rpx;
-  background: linear-gradient(135deg, #00c9a7 0%, #2e90ff 100%);
-  border-radius: 0 0 48rpx 48rpx;
-}
-.hero__row { display: flex; align-items: center; gap: 20rpx; }
-.avatar {
-  width: 104rpx; height: 104rpx; border-radius: 36rpx;
-  background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.35);
-}
-.avatar--ph {
-  color: #fff; display: flex; align-items: center; justify-content: center;
+.me-row { display: flex; align-items: center; gap: 22rpx; }
+.me-avatar {
+  width: 108rpx; height: 108rpx; border-radius: 999rpx; flex-shrink: 0;
+  border: 2rpx solid rgba(255, 255, 255, 0.22);
+  background: linear-gradient(135deg, #00d6b2, #19a7f8); color: #fff;
+  display: flex; align-items: center; justify-content: center;
   font-size: 40rpx; font-weight: 800;
 }
-.meta { color: #fff; }
-.name { font-size: 38rpx; font-weight: 800; }
-.sub { margin-top: 6rpx; font-size: 22rpx; opacity: .88; }
-.card {
-  margin: 0 32rpx 20rpx; background: #fff; border-radius: 40rpx; padding: 8rpx 24rpx;
-  box-shadow: 0 16rpx 48rpx rgba(10, 60, 58, 0.08);
+.me-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.me-sub { margin-top: 8rpx; font-size: 22rpx; color: rgba(255, 255, 255, 0.5); }
+
+.growth__top { display: flex; align-items: center; justify-content: space-between; }
+.growth__l { font-size: 26rpx; font-weight: 700; color: #0e1f26; }
+.growth__p { font-size: 22rpx; color: #00a08c; font-weight: 700; }
+.growth__bar { margin-top: 16rpx; }
+.growth__hint { display: block; margin-top: 14rpx; font-size: 20rpx; color: #8a9aa3; }
+
+.stats-card { padding: 30rpx 16rpx; }
+.row-ico {
+  width: 72rpx; height: 72rpx; border-radius: 22rpx; flex-shrink: 0;
+  background: #e8fbf7; color: #00766a;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24rpx; font-weight: 800;
 }
-.stats { margin-top: -40rpx; display: flex; padding: 28rpx 8rpx; }
-.stat { flex: 1; text-align: center; }
-.num { font-size: 36rpx; font-weight: 800; color: #0e1f26; }
-.lab { margin-top: 6rpx; color: #8a9aa3; font-size: 22rpx; }
-.list { padding: 8rpx 20rpx; }
-.row {
-  display: flex; align-items: center; gap: 16rpx; padding: 24rpx 0;
-  border-bottom: 1px solid #eaf0f2;
-}
-.row:last-child { border-bottom: none; }
-.ico {
-  width: 72rpx; height: 72rpx; border-radius: 22rpx; background: #e8fbf7; color: #00766a;
-  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 26rpx;
-}
-.row__main { flex: 1; min-width: 0; }
-.t { font-size: 28rpx; font-weight: 700; color: #0e1f26; }
-.d { margin-top: 4rpx; color: #8a9aa3; font-size: 22rpx; }
-.act { color: #009784; font-weight: 700; font-size: 24rpx; }
-.label { margin: 8rpx 32rpx 12rpx; color: #8a9aa3; font-size: 24rpx; }
-.dev-row {
-  margin: 0 32rpx 12rpx; background: #fff; border-radius: 28rpx; padding: 24rpx;
-  display: flex; justify-content: space-between; color: #33454f; font-size: 26rpx;
-  box-shadow: 0 8rpx 24rpx rgba(10, 60, 58, 0.05);
-}
-.logout {
-  margin: 24rpx 32rpx 0; background: #fff; color: #c22a2e; border-radius: 999rpx;
-  font-weight: 700; border: 1px solid #eaf0f2;
-}
-.fail { margin: 0 32rpx 16rpx; color: #c22a2e; font-weight: 700; }
-.skel { margin: -40rpx 32rpx 20rpx; height: 200rpx; border-radius: 40rpx; background: #e2eaee; }
+.row-ico--blue { background: #eaf2ff; color: #1c6dd0; }
+.row-ico--warm { background: #fff6e8; color: #a9670a; }
+
+.logout { margin-top: 32rpx; color: #c0342f; }
+.foot-hint { margin: 28rpx 0 8rpx; text-align: center; font-size: 20rpx; color: #b3c0c7; }
+.fail__t { font-size: 26rpx; color: #c0342f; line-height: 1.6; }
 </style>

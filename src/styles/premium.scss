@@ -1,0 +1,416 @@
+/* ==========================================================
+   小Z 全站视觉基座 v2 —— Aurora 深墨
+   所有页面共用同一套类名，避免各页自己写边框、内边距、圆角。
+   命名前缀 pm- 避免与页面 scoped 类冲突。
+   ========================================================== */
+
+/* ---------------- 页面容器 ---------------- */
+.pm-page {
+  min-height: 100vh;
+  background: #f3f7f8;
+  padding-bottom: 180rpx;
+}
+.pm-page--plain {
+  padding-bottom: calc(48rpx + env(safe-area-inset-bottom));
+}
+
+/* ---------------- 深色首屏 ---------------- */
+.pm-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 32rpx 40rpx 100rpx;
+  background: linear-gradient(148deg, #07262f 0%, #0a2338 52%, #0d2f4a 100%);
+  border-radius: 0 0 52rpx 52rpx;
+  color: #ffffff;
+}
+.pm-hero--short {
+  padding-bottom: 72rpx;
+}
+.pm-hero__glow {
+  position: absolute;
+  right: -160rpx;
+  top: -200rpx;
+  width: 500rpx;
+  height: 500rpx;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 214, 178, 0.32) 0%, rgba(0, 214, 178, 0) 70%);
+  pointer-events: none;
+}
+.pm-hero__glow2 {
+  position: absolute;
+  left: -140rpx;
+  bottom: -220rpx;
+  width: 440rpx;
+  height: 440rpx;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(46, 144, 255, 0.28) 0%, rgba(46, 144, 255, 0) 70%);
+  pointer-events: none;
+}
+.pm-hero__inner {
+  position: relative;
+  z-index: 2;
+}
+
+/* 首屏文字层级 */
+.pm-eyebrow {
+  font-size: 22rpx;
+  letter-spacing: 2rpx;
+  color: rgba(255, 255, 255, 0.52);
+}
+.pm-hero__title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #ffffff;
+}
+.pm-hero__cap {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.5);
+}
+.pm-hero__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1rpx solid rgba(255, 255, 255, 0.16);
+  font-size: 20rpx;
+  font-weight: 700;
+  color: #d8f7f1;
+}
+.pm-hero__dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #00d6b2;
+  box-shadow: 0 0 14rpx rgba(0, 214, 178, 0.9);
+}
+
+/* 首屏主数字 */
+.pm-bignum {
+  display: flex;
+  align-items: flex-end;
+  gap: 10rpx;
+}
+.pm-bignum__v {
+  font-size: 66rpx;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -1rpx;
+  font-variant-numeric: tabular-nums;
+}
+.pm-bignum__u {
+  font-size: 22rpx;
+  opacity: 0.6;
+  padding-bottom: 8rpx;
+}
+
+/* ---------------- 上浮内容区 ---------------- */
+.pm-body {
+  position: relative;
+  z-index: 3;
+  margin-top: -64rpx;
+  padding: 0 32rpx 24rpx;
+}
+.pm-body--flat {
+  margin-top: 0;
+  padding-top: 28rpx;
+}
+
+/* ---------------- 卡片 ---------------- */
+.pm-card {
+  background: #ffffff;
+  border: 1rpx solid #eaf0f2;
+  border-radius: 32rpx;
+  padding: 28rpx 30rpx;
+  box-shadow: 0 8rpx 28rpx rgba(10, 60, 58, 0.05);
+}
+.pm-card + .pm-card {
+  margin-top: 20rpx;
+}
+.pm-card--flush {
+  padding: 0;
+  overflow: hidden;
+}
+.pm-card--dark {
+  background: #07262f;
+  border-color: #0b3140;
+  color: #ffffff;
+  box-shadow: 0 16rpx 40rpx rgba(7, 38, 47, 0.18);
+}
+.pm-card--loud {
+  background: linear-gradient(135deg, #09303a 0%, #0b2440 100%);
+  border: none;
+  color: #ffffff;
+  box-shadow: 0 20rpx 48rpx rgba(0, 60, 70, 0.22);
+}
+
+/* ---------------- 三段指标 ---------------- */
+.pm-stats {
+  display: flex;
+  align-items: stretch;
+}
+.pm-stat {
+  flex: 1;
+  text-align: center;
+  padding: 6rpx 0;
+  position: relative;
+}
+.pm-stat + .pm-stat::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14rpx;
+  bottom: 14rpx;
+  width: 1rpx;
+  background: #f0f4f5;
+}
+.pm-stat__v {
+  font-size: 40rpx;
+  font-weight: 800;
+  color: #0e1f26;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.pm-stat__l {
+  font-size: 22rpx;
+  color: #8a9aa3;
+  margin-top: 4rpx;
+}
+
+/* ---------------- 药丸标签 ---------------- */
+.pm-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+.pm-pill--teal {
+  background: #e8fbf7;
+  color: #00766a;
+}
+.pm-pill--warn {
+  background: #fff6e8;
+  color: #a9670a;
+}
+.pm-pill--danger {
+  background: #fdecec;
+  color: #c0342f;
+}
+.pm-pill--muted {
+  background: #f0f3f4;
+  color: #6d818b;
+}
+.pm-pill--dark {
+  background: rgba(255, 255, 255, 0.1);
+  color: #d8f7f1;
+}
+
+/* ---------------- 分段控件 ---------------- */
+.pm-seg {
+  display: flex;
+  gap: 12rpx;
+}
+.pm-seg__i {
+  flex: 1;
+  text-align: center;
+  padding: 16rpx 0;
+  border-radius: 20rpx;
+  background: #ffffff;
+  border: 1rpx solid #eaf0f2;
+  font-size: 24rpx;
+  color: #6d818b;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.pm-seg__i.is-on {
+  background: #07262f;
+  border-color: #07262f;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+/* ---------------- 区块标题 ---------------- */
+.pm-section {
+  display: flex;
+  align-items: center;
+  margin: 34rpx 8rpx 16rpx;
+}
+.pm-section__t {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #0e1f26;
+}
+.pm-section__more {
+  margin-left: auto;
+  font-size: 22rpx;
+  color: #00a08c;
+}
+
+/* ---------------- 列表行 ---------------- */
+.pm-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 26rpx 30rpx;
+}
+.pm-row + .pm-row {
+  border-top: 1rpx solid #f2f6f7;
+}
+.pm-row__main {
+  flex: 1;
+  min-width: 0;
+}
+.pm-row__t {
+  font-size: 28rpx;
+  color: #0e1f26;
+  font-weight: 600;
+}
+.pm-row__d {
+  font-size: 22rpx;
+  color: #8a9aa3;
+  margin-top: 6rpx;
+}
+.pm-row__x {
+  font-size: 24rpx;
+  color: #8a9aa3;
+  flex-shrink: 0;
+}
+
+/* ---------------- 进度条 ---------------- */
+.pm-bar {
+  height: 10rpx;
+  border-radius: 999rpx;
+  background: #eef2f3;
+  overflow: hidden;
+}
+.pm-bar__fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #00d6b2, #19a7f8);
+}
+
+/* ---------------- 按钮 ---------------- */
+.pm-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+  border: none;
+  margin: 0;
+  padding: 0 32rpx;
+}
+.pm-btn::after {
+  border: none;
+}
+.pm-btn--primary {
+  background: linear-gradient(135deg, #00d6b2, #19a7f8);
+  color: #ffffff;
+  box-shadow: 0 12rpx 32rpx rgba(0, 184, 160, 0.28);
+}
+.pm-btn--dark {
+  background: #07262f;
+  color: #ffffff;
+}
+.pm-btn--ghost {
+  background: #ffffff;
+  border: 1rpx solid #d8e2e6;
+  color: #33454f;
+}
+.pm-btn--danger {
+  background: #f5484d;
+  color: #ffffff;
+}
+.pm-btn--sm {
+  height: 64rpx;
+  font-size: 24rpx;
+  padding: 0 24rpx;
+}
+.pm-btn.is-off {
+  background: #eef2f3;
+  color: #a8b6bd;
+  box-shadow: none;
+}
+
+/* ---------------- 底部固定操作栏 ---------------- */
+.pm-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 15;
+  display: flex;
+  gap: 20rpx;
+  padding: 20rpx 32rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.97);
+  border-top: 1rpx solid #eaf0f2;
+}
+
+/* ---------------- 空态 / 骨架 ---------------- */
+.pm-empty {
+  padding: 90rpx 40rpx;
+  text-align: center;
+}
+.pm-empty__t {
+  font-size: 28rpx;
+  color: #33454f;
+  font-weight: 600;
+}
+.pm-empty__d {
+  font-size: 24rpx;
+  color: #8a9aa3;
+  margin-top: 12rpx;
+  line-height: 1.6;
+}
+.pm-skel {
+  background: linear-gradient(90deg, #eef3f4 25%, #e6edef 37%, #eef3f4 63%);
+  background-size: 400% 100%;
+  animation: pm-shimmer 1.2s ease infinite;
+  border-radius: 16rpx;
+}
+@keyframes pm-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+
+/* ---------------- 文本工具 ---------------- */
+.pm-muted {
+  color: #8a9aa3;
+}
+.pm-teal {
+  color: #00a08c;
+}
+.pm-danger {
+  color: #f5484d;
+}
+.pm-warn {
+  color: #c9820e;
+}
+.pm-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- 入场动画 ---------------- */
+.pm-rise {
+  animation: pm-rise 0.34s cubic-bezier(0.22, 0.85, 0.3, 1) both;
+}
+@keyframes pm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24rpx);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

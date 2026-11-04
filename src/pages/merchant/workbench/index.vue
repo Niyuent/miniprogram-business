@@ -47,10 +47,10 @@ onShareAppMessage(() => ({
 
 <template>
   <view class="desk">
-    <!-- 非 AI 面板仍用 v-if；AI 用 v-show 保活，配合 pinia 会话，切底栏不丢聊天 -->
     <workbench-panel v-if="merchant === 'workbench'" :active="true" />
-    <view v-show="merchant === 'ai'" class="desk__ai">
-      <ai-panel :active="merchant === 'ai'" />
+    <!-- AI 用 v-if + 稳定 key，避免热更新后新旧 DOM/样式叠在一起；消息仍在 pinia -->
+    <view v-if="merchant === 'ai'" class="desk__ai">
+      <ai-panel :key="'ai-chat-v3'" :active="true" />
     </view>
     <verify-panel v-if="merchant === 'verify'" :active="true" />
     <merchant-mine-panel v-if="merchant === 'profile'" :active="true" />
@@ -60,5 +60,8 @@ onShareAppMessage(() => ({
 
 <style scoped>
 .desk { min-height: 100vh; background: #f3f7f8; }
-.desk__ai { min-height: 100vh; }
+.desk__ai {
+  height: 100vh;
+  overflow: hidden;
+}
 </style>

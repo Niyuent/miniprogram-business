@@ -26,6 +26,12 @@ const REASON: Record<string, string> = {
   STOCK_EXHAUSTED: '这张券已经被领完了',
   TEMPLATE_NOT_EXCHANGEABLE: '这张券现在不能用积分换',
   POINT_ACCOUNT_NOT_FOUND: '还没有积分账户',
+  ALLIANCE_ID_REQUIRED: '请选择发放积分的联盟',
+  ALLIANCE_NOT_FOUND: '所选联盟不存在',
+  MERCHANT_NOT_IN_ALLIANCE: '本店不属于所选联盟',
+  SUB_COUPON_REQUIRES_MAIN_POINTS: '需要主体消费获得的积分',
+  ALLIANCE_MISMATCH: '券与所选联盟不匹配',
+  MEMBER_QR_EXPIRED: '会员码已过期，请让对方刷新后再扫',
 };
 
 /** 微信开发者工具未勾选「不校验合法域名」时的典型报错 */

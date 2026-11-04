@@ -6,11 +6,14 @@ onLaunch(() => {
 });
 </script>
 
-<style>
+<style lang="scss">
+@import './styles/premium.scss';
+
 page {
   background: #f3f7f8;
   color: #0e1f26;
   font-size: 28rpx;
+  font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
 }
 .press,
 .pressable:active {

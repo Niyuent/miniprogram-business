@@ -141,66 +141,94 @@ function roleLabel(role: string) {
 </script>
 
 <template>
-  <view class="page">
+  <view class="pm-page pm-page--plain">
     <network-banner />
-    <view class="head">
-      <text class="title">周围商家联盟</text>
-      <text class="sub">
-        共 {{ summary.totalAlliances }} 个联盟 · {{ summary.totalShops }} 家店，到店出示会员码即可积分
-      </text>
+
+    <view class="pm-hero pm-hero--short">
+      <view class="pm-hero__glow" />
+      <view class="pm-hero__glow2" />
+      <view class="pm-hero__inner">
+        <text class="pm-hero__title">周围商家联盟</text>
+        <view class="pm-bignum hero-num">
+          <text class="pm-bignum__v">{{ summary.totalShops }}</text>
+          <text class="pm-bignum__u">家门店</text>
+        </view>
+        <text class="pm-hero__cap hero-cap">
+          {{ summary.totalAlliances }} 个联盟 · 到店出示会员码即可积分
+        </text>
+      </view>
     </view>
 
-    <scroll-view v-if="alliances.length" scroll-x class="chips" :show-scrollbar="false">
-      <view
-        v-for="item in alliances"
-        :key="item.id"
-        class="chip"
-        :class="{ 'is-on': item.id === currentAllianceId }"
-        hover-class="press"
-        @tap="openAlliance(item.id)"
-      >
-        <text>{{ item.name }} · {{ item.merchantCount }} 家</text>
-      </view>
-    </scroll-view>
-
-    <view v-if="loading && !alliances.length" class="wait">正在加载联盟…</view>
-    <view v-else-if="errorText && !alliances.length" class="wait">{{ errorText }}</view>
-    <view v-else-if="!alliances.length" class="wait">暂时还没有可展示的商家联盟</view>
-
-    <template v-else-if="current">
-      <view class="alliance-card">
-        <view class="alliance-card__top">
-          <text class="alliance-card__name">{{ current.name }}</text>
-          <text class="alliance-card__count">{{ current.merchantCount }} 家</text>
-        </view>
-        <text v-if="current.city" class="alliance-card__city">{{ current.city }}</text>
-        <text class="alliance-card__hint">本联盟商家如下，点一家可看地址并去消费</text>
-
+    <view class="pm-body">
+      <scroll-view v-if="alliances.length" scroll-x class="chips" :show-scrollbar="false">
         <view
-          v-for="shop in current.merchants"
-          :key="shop.id"
-          class="shop"
+          v-for="item in alliances"
+          :key="item.id"
+          class="chip"
+          :class="{ 'is-on': item.id === currentAllianceId }"
           hover-class="press"
-          @tap="onPickMerchant(shop)"
+          @tap="openAlliance(item.id)"
         >
-          <view class="shop__ico">{{ shop.role === 'MAIN' ? '主' : '店' }}</view>
-          <view class="shop__main">
-            <view class="shop__row">
-              <text class="shop__name">{{ shop.name }}</text>
-              <text class="shop__tag">{{ roleLabel(shop.role) }}</text>
-            </view>
-            <text class="shop__addr">{{ shop.address || shop.storeName || '地址待完善' }}</text>
-            <text v-if="shop.hours" class="shop__hours">营业 {{ shop.hours }}</text>
-          </view>
-          <text class="shop__go">详情</text>
+          <text>{{ item.name }} · {{ item.merchantCount }} 家</text>
         </view>
+      </scroll-view>
+
+      <view v-if="loading && !alliances.length" class="pm-card">
+        <view class="pm-skel" style="height: 200rpx" />
+      </view>
+      <view v-else-if="errorText && !alliances.length" class="pm-card fail">
+        <text class="fail__t">{{ errorText }}</text>
+      </view>
+      <view v-else-if="!alliances.length" class="pm-card pm-empty">
+        <view class="pm-empty__t">暂时还没有可展示的商家联盟</view>
+        <view class="pm-empty__d">附近商家加入联盟后会出现在这里</view>
       </view>
 
-      <text class="section">联盟星系</text>
-      <view v-if="loading && !chart" class="wait wait--sm">星系展开中…</view>
-      <galaxy-stage v-else-if="chart" :chart="chart" :focus-id="target?.id || pickMerchant?.id" @pick="pick" />
-      <view v-if="errorText && chart" class="banner">{{ errorText }}</view>
-    </template>
+      <template v-else-if="current">
+        <view class="pm-card current">
+          <view class="current__top">
+            <text class="current__name">{{ current.name }}</text>
+            <text class="pm-pill pm-pill--teal">{{ current.merchantCount }} 家</text>
+          </view>
+          <text v-if="current.city" class="current__city">{{ current.city }}</text>
+          <text class="current__hint">本联盟商家如下，点一家可看地址并去消费</text>
+        </view>
+
+        <view class="pm-card pm-card--flush shops">
+          <view
+            v-for="shop in current.merchants"
+            :key="shop.id"
+            class="pm-row"
+            hover-class="press"
+            @tap="onPickMerchant(shop)"
+          >
+            <view class="shop-ico" :class="shop.role === 'MAIN' ? 'shop-ico--main' : ''">
+              {{ shop.role === 'MAIN' ? '主' : '店' }}
+            </view>
+            <view class="pm-row__main">
+              <view class="shop-top">
+                <text class="shop-name">{{ shop.name }}</text>
+                <text class="pm-pill pm-pill--muted">{{ roleLabel(shop.role) }}</text>
+              </view>
+              <view class="pm-row__d">{{ shop.address || shop.storeName || '地址待完善' }}</view>
+              <view v-if="shop.hours" class="shop-hours">营业 {{ shop.hours }}</view>
+            </view>
+            <text class="pm-row__x">›</text>
+          </view>
+        </view>
+
+        <view class="pm-section">
+          <text class="pm-section__t">联盟星系</text>
+        </view>
+        <view v-if="loading && !chart" class="pm-card">
+          <view class="pm-skel" style="height: 420rpx" />
+        </view>
+        <galaxy-stage v-else-if="chart" :chart="chart" :focus-id="target?.id || pickMerchant?.id" @pick="pick" />
+        <view v-if="errorText && chart" class="pm-card fail">
+          <text class="fail__t">{{ errorText }}</text>
+        </view>
+      </template>
+    </view>
 
     <slide-sheet :visible="sheetOpen" @close="sheetOpen = false">
       <view class="sheet__title">{{ pickMerchant?.name || target?.storeName || target?.name || current?.name }}</view>
@@ -215,81 +243,42 @@ function roleLabel(role: string) {
 </template>
 
 <style scoped>
-.page { min-height: 100vh; background: #f3f7f8; padding-bottom: 64rpx; box-sizing: border-box; }
-.head {
-  padding: 28rpx 32rpx 20rpx;
-  background: linear-gradient(135deg, #09303a 0%, #0b2440 100%);
-  border-radius: 0 0 40rpx 40rpx;
-  color: #fff;
-}
-.title { display: block; font-size: 40rpx; font-weight: 800; color: #fff; }
-.sub { display: block; margin-top: 10rpx; color: rgba(255,255,255,.85); font-size: 24rpx; line-height: 1.5; }
-.chips { white-space: nowrap; padding: 20rpx 24rpx 8rpx; }
+.hero-num { margin-top: 16rpx; }
+.hero-cap { display: block; margin-top: 10rpx; }
+
+.chips { white-space: nowrap; width: 100%; margin-bottom: 18rpx; }
 .chip {
-  display: inline-block;
-  margin-right: 16rpx;
-  padding: 14rpx 22rpx;
-  border-radius: 999rpx;
-  background: #fff;
-  color: #556670;
-  font-size: 24rpx;
-  border: 1px solid #eaf0f2;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 14rpx 28rpx; margin-right: 12rpx; border-radius: 999rpx;
+  background: #fff; border: 1rpx solid #eaf0f2; color: #6d818b; font-size: 24rpx;
 }
-.chip.is-on {
-  background: linear-gradient(135deg, #00d6b2, #19a7f8);
-  color: #fff;
-  font-weight: 700;
-  border-color: transparent;
+.chip.is-on { background: #07262f; border-color: #07262f; color: #fff; font-weight: 700; }
+
+.current__top { display: flex; align-items: center; gap: 16rpx; }
+.current__name { flex: 1; min-width: 0; font-size: 32rpx; font-weight: 700; color: #0e1f26; }
+.current__city { display: block; margin-top: 8rpx; font-size: 22rpx; color: #8a9aa3; }
+.current__hint { display: block; margin-top: 10rpx; font-size: 22rpx; color: #6d818b; line-height: 1.5; }
+
+.shops { margin-top: 20rpx; }
+.shop-ico {
+  width: 72rpx; height: 72rpx; border-radius: 22rpx; flex-shrink: 0;
+  background: #eaf2ff; color: #1c6dd0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24rpx; font-weight: 800;
 }
-.wait { padding: 120rpx 32rpx; text-align: center; color: #8a9aa3; }
-.wait--sm { padding: 48rpx 32rpx; }
-.alliance-card {
-  margin: 8rpx 32rpx 0;
-  padding: 28rpx 28rpx 12rpx;
-  background: #fff;
-  border-radius: 32rpx;
-  box-shadow: 0 12rpx 36rpx rgba(10, 60, 58, 0.06);
-}
-.alliance-card__top { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
-.alliance-card__name { font-size: 32rpx; font-weight: 800; color: #0e1f26; }
-.alliance-card__count {
-  padding: 6rpx 14rpx; border-radius: 999rpx; background: #e8fbf7; color: #00766a;
-  font-size: 22rpx; font-weight: 700; flex-shrink: 0;
-}
-.alliance-card__city { display: block; margin-top: 8rpx; color: #8a9aa3; font-size: 22rpx; }
-.alliance-card__hint { display: block; margin: 12rpx 0 8rpx; color: #556670; font-size: 24rpx; }
-.shop {
-  display: flex; align-items: center; gap: 16rpx;
-  padding: 22rpx 0; border-top: 1px solid #eaf0f2;
-}
-.shop__ico {
-  width: 68rpx; height: 68rpx; border-radius: 20rpx; background: #e8fbf7; color: #00766a;
-  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 24rpx; flex-shrink: 0;
-}
-.shop__main { flex: 1; min-width: 0; }
-.shop__row { display: flex; align-items: center; gap: 12rpx; }
-.shop__name { font-size: 28rpx; font-weight: 700; color: #0e1f26; }
-.shop__tag {
-  padding: 2rpx 10rpx; border-radius: 999rpx; background: #f1f5f7; color: #556670;
-  font-size: 20rpx; font-weight: 600;
-}
-.shop__addr, .shop__hours {
-  display: block; margin-top: 6rpx; font-size: 22rpx; color: #8a9aa3;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.shop__go { color: #009784; font-weight: 700; font-size: 24rpx; flex-shrink: 0; }
-.section {
-  display: block; margin: 28rpx 32rpx 12rpx; font-size: 28rpx; font-weight: 800; color: #0e1f26;
-}
-.banner { margin: 16rpx 32rpx; color: #c22a2e; font-size: 24rpx; }
+.shop-ico--main { background: #e8fbf7; color: #00766a; }
+.shop-top { display: flex; align-items: center; gap: 12rpx; }
+.shop-name { font-size: 28rpx; font-weight: 600; color: #0e1f26; }
+.shop-hours { margin-top: 6rpx; font-size: 20rpx; color: #a8b6bd; }
+
+.sheet__title { font-size: 32rpx; font-weight: 800; color: #0e1f26; }
+.sheet__hint { margin-top: 14rpx; font-size: 24rpx; color: #6d818b; line-height: 1.6; }
 .go {
-  margin-top: 24rpx;
-  background: linear-gradient(135deg, #00d6b2, #19a7f8);
-  color: #fff;
+  margin-top: 28rpx; height: 92rpx; line-height: 92rpx;
   border-radius: 999rpx;
-  font-weight: 800;
-  border: none;
+  background: linear-gradient(135deg, #00d6b2, #19a7f8);
+  color: #fff; font-size: 28rpx; font-weight: 700;
 }
-.sheet__title { font-size: 36rpx; font-weight: 800; color: #0e1f26; }
-.sheet__hint { margin-top: 12rpx; color: #64748b; line-height: 1.6; }
+.go::after { border: none; }
+.fail__t { font-size: 26rpx; color: #c0342f; line-height: 1.6; }
 </style>

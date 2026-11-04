@@ -48,8 +48,6 @@ const items = computed<TabItem[]>(() => {
     .filter((item): item is TabItem => item !== null);
 });
 
-const accent = computed(() => (role.value === 'merchant' ? '#00b8a0' : '#0e1f26'));
-
 function go(item: TabItem) {
   if (item.key === props.active) return;
   const desk = useDeskStore();
@@ -69,8 +67,11 @@ function go(item: TabItem) {
 <template>
   <view>
     <network-banner />
-    <view class="tabbar" :style="{ '--accent': accent }">
-      <view class="tabbar__tag">{{ role === 'merchant' ? '商家端' : '会员端' }}</view>
+    <view class="tabbar">
+      <view class="tabbar__tag">
+        <view class="tabbar__dot" />
+        <text class="tabbar__tagtext">{{ role === 'merchant' ? '商家端' : '会员端' }}</text>
+      </view>
       <view
         v-for="item in items"
         :key="item.key"
@@ -90,29 +91,41 @@ function go(item: TabItem) {
   position: fixed;
   left: 28rpx;
   right: 28rpx;
-  bottom: 28rpx;
+  bottom: calc(28rpx + env(safe-area-inset-bottom));
   z-index: 20;
   display: flex;
   align-items: stretch;
   height: 108rpx;
   padding: 8rpx;
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid #eaf0f2;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1rpx solid #eaf0f2;
   border-radius: 999rpx;
-  box-shadow: 0 16rpx 40rpx rgba(10, 60, 58, 0.1);
+  box-shadow: 0 20rpx 48rpx rgba(7, 38, 47, 0.14);
 }
 .tabbar__tag {
   position: absolute;
-  top: -28rpx;
-  left: 28rpx;
-  padding: 2rpx 12rpx;
+  top: -34rpx;
+  left: 32rpx;
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 0 16rpx;
+  height: 32rpx;
   border-radius: 999rpx;
-  background: linear-gradient(135deg, #00d6b2, #19a7f8);
-  color: #fff;
-  font-size: 20rpx;
+  background: #07262f;
+}
+.tabbar__dot {
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background: #00d6b2;
+}
+.tabbar__tagtext {
+  font-size: 18rpx;
   line-height: 32rpx;
-  font-weight: 700;
+  color: #d8f7f1;
+  letter-spacing: 1rpx;
 }
 .tabbar__item {
   flex: 1;
@@ -120,14 +133,18 @@ function go(item: TabItem) {
   align-items: center;
   justify-content: center;
   color: #8a9aa3;
+  border-radius: 999rpx;
+  transition: background 0.18s ease, color 0.18s ease;
 }
 .tabbar__item.is-active {
-  color: #fff;
-  font-weight: 700;
-  background: var(--accent);
-  border-radius: 999rpx;
+  color: #ffffff;
+  background: #07262f;
+  box-shadow: 0 10rpx 24rpx rgba(7, 38, 47, 0.22);
 }
 .tabbar__text {
   font-size: 26rpx;
+}
+.tabbar__item.is-active .tabbar__text {
+  font-weight: 700;
 }
 </style>

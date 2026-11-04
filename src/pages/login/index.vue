@@ -4,6 +4,7 @@ import NetworkBanner from '@/components/NetworkBanner.vue';
 import { loginAndRoute, loginMerchantAndRoute, MERCHANT_TEST_ACCOUNTS } from '@/services/auth';
 import { friendlyMessage, isDomainListError } from '@/utils/errors';
 import { apiBaseUrl, apiHost, DEV_LAN_HOST, HttpError, probeApi, setApiHost } from '@/utils/request';
+import { IS_DEV } from '@/utils/env';
 
 const status = ref('点下方账号进入即可');
 const detail = ref('');
@@ -36,7 +37,7 @@ function explain(error: unknown, fallback: string) {
     showNet.value = true;
     return (
       `${base}\n当前 ${apiBaseUrl()}\n` +
-      '① 详情里勾选「不校验合法域名」；② 模拟器用 127.0.0.1；③ 真机预览用局域网 IP。'
+      '① 详情 → 本地设置 勾选「不校验合法域名」；② 本机后端 3000 端口需在运行；③ 真机预览用局域网 IP。'
     );
   }
   return base;
@@ -105,7 +106,7 @@ async function enterMerchant(username: string) {
 }
 
 onMounted(() => {
-  void runProbe();
+  if (IS_DEV) void runProbe();
 });
 </script>
 
@@ -116,12 +117,12 @@ onMounted(() => {
     <view class="login__mark">小Z 随身版</view>
     <view class="login__sub">经营助手 · 会员码 · 核销发积分</view>
 
-    <view class="login__net" :class="probeOk === false ? 'is-bad' : probeOk ? 'is-ok' : ''" @tap="showNet = !showNet">
+    <view v-if="IS_DEV" class="login__net" :class="probeOk === false ? 'is-bad' : probeOk ? 'is-ok' : ''" @tap="showNet = !showNet">
       <text>{{ netSummary }}</text>
       <text class="login__net-link">{{ showNet ? '收起' : '网络设置' }}</text>
     </view>
 
-    <view v-if="showNet" class="login__host">
+    <view v-if="IS_DEV && showNet" class="login__host">
       <view class="login__probe">{{ probeText }}</view>
       <view v-if="domainBlocked" class="login__domain">{{ DOMAIN_TIP }}</view>
       <view class="login__host-row">
@@ -155,167 +156,199 @@ onMounted(() => {
       {{ pending === 'member' ? '正在登录…' : '微信登录（会员）' }}
     </button>
 
-    <view class="login__label">商家测试账号（点一项即可进入）</view>
-    <button
-      v-for="item in MERCHANT_TEST_ACCOUNTS"
-      :key="item.username"
-      class="login__merchant"
-      hover-class="press"
-      :loading="pending === item.username"
-      :disabled="!!pending"
-      @tap="enterMerchant(item.username)"
-    >
-      {{ pending === item.username ? '正在登录…' : `${item.label} · ${item.hint}` }}
-    </button>
+    <block v-if="IS_DEV">
+      <view class="login__label">商家测试账号（点一项即可进入）</view>
+      <button
+        v-for="item in MERCHANT_TEST_ACCOUNTS"
+        :key="item.username"
+        class="login__merchant"
+        hover-class="press"
+        :loading="pending === item.username"
+        :disabled="!!pending"
+        @tap="enterMerchant(item.username)"
+      >
+        {{ pending === item.username ? '正在登录…' : `${item.label} · ${item.hint}` }}
+      </button>
+    </block>
   </view>
 </template>
 
 <style scoped>
 .login {
+  position: relative;
   min-height: 100vh;
-  padding: 120rpx 48rpx 64rpx;
+  padding: 140rpx 48rpx calc(64rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  background: linear-gradient(160deg, #eafcf8 0%, #e9f3ff 55%, #f3f7f8 100%);
+  overflow: hidden;
+  background: linear-gradient(160deg, #04161d 0%, #062230 48%, #07262f 100%);
+  display: flex;
+  flex-direction: column;
 }
+.login::before {
+  content: '';
+  position: absolute;
+  right: -200rpx;
+  top: -180rpx;
+  width: 620rpx;
+  height: 620rpx;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 214, 178, 0.28) 0%, rgba(0, 214, 178, 0) 70%);
+}
+.login::after {
+  content: '';
+  position: absolute;
+  left: -220rpx;
+  bottom: -260rpx;
+  width: 560rpx;
+  height: 560rpx;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(46, 144, 255, 0.24) 0%, rgba(46, 144, 255, 0) 70%);
+}
+
 .login__badge {
-  width: 96rpx;
-  height: 96rpx;
-  border-radius: 28rpx;
+  position: relative;
+  z-index: 2;
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 30rpx;
   background: linear-gradient(135deg, #00d6b2, #19a7f8);
   color: #fff;
-  font-size: 48rpx;
+  font-size: 50rpx;
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 20rpx 56rpx rgba(0, 184, 160, 0.28);
+  box-shadow: 0 24rpx 60rpx rgba(0, 214, 178, 0.35);
 }
 .login__mark {
-  margin-top: 28rpx;
-  font-size: 56rpx;
+  position: relative;
+  z-index: 2;
+  margin-top: 32rpx;
+  font-size: 58rpx;
   font-weight: 800;
   letter-spacing: -1rpx;
-  color: #0e1f26;
+  color: #fff;
 }
 .login__sub {
-  margin-top: 12rpx;
-  color: #8a9aa3;
+  position: relative;
+  z-index: 2;
+  margin-top: 14rpx;
+  color: rgba(255, 255, 255, 0.5);
   font-size: 26rpx;
+  letter-spacing: 1rpx;
 }
+
+/* ---- 开发调试块：仅 IS_DEV 渲染 ---- */
 .login__net {
-  margin-top: 24rpx;
+  position: relative;
+  z-index: 2;
+  margin-top: 40rpx;
   padding: 18rpx 22rpx;
-  border-radius: 16rpx;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid #eaf0f2;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1rpx solid rgba(255, 255, 255, 0.16);
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16rpx;
-  font-size: 24rpx;
-  color: #5b6b73;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.7);
 }
-.login__net.is-ok {
-  color: #0f766e;
-  border-color: #99e0d4;
-  background: #eefbf8;
-}
-.login__net.is-bad {
-  color: #c22a2e;
-  border-color: #ffccc7;
-  background: #fff1f0;
-}
-.login__net-link {
-  flex-shrink: 0;
-  color: #00766a;
-  font-weight: 600;
-}
+.login__net.is-ok { border-color: rgba(0, 214, 178, 0.5); color: #7ff0dd; }
+.login__net.is-bad { border-color: rgba(245, 72, 77, 0.5); color: #ff9a9c; }
+.login__net-link { color: #7ff0dd; font-weight: 700; flex-shrink: 0; }
 .login__host {
-  margin-top: 12rpx;
+  position: relative;
+  z-index: 2;
+  margin-top: 14rpx;
   padding: 20rpx;
-  background: rgba(255, 255, 255, 0.72);
   border-radius: 20rpx;
-  border: 1px solid #eaf0f2;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
 }
-.login__probe {
-  font-size: 22rpx;
-  color: #8a9aa3;
-  line-height: 1.45;
-  margin-bottom: 12rpx;
-}
-.login__domain {
-  margin-bottom: 12rpx;
-  padding: 16rpx;
-  background: #fff1f0;
-  border: 1px solid #ffccc7;
-  border-radius: 12rpx;
-  color: #a8071a;
-  font-size: 22rpx;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-.login__host-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-  align-items: center;
-  margin-top: 8rpx;
-}
+.login__probe { font-size: 20rpx; color: rgba(255, 255, 255, 0.55); line-height: 1.6; }
+.login__domain { margin-top: 8rpx; font-size: 20rpx; color: #ff9a9c; line-height: 1.6; }
+.login__host-row { display: flex; align-items: center; gap: 10rpx; margin-top: 14rpx; }
 .login__chip {
+  flex-shrink: 0;
   margin: 0;
-  background: #e6f7f4;
-  color: #00766a;
-  border-radius: 999rpx;
-  font-size: 22rpx;
-  line-height: 1.4;
   padding: 0 18rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  border-radius: 999rpx;
+  background: rgba(0, 214, 178, 0.16);
+  color: #7ff0dd;
+  font-size: 20rpx;
+  border: 1rpx solid rgba(0, 214, 178, 0.3);
 }
-.login__chip--ghost {
-  background: #f3f7f8;
-  color: #5b6b73;
-}
+.login__chip::after { border: none; }
+.login__chip--ghost { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.7); border-color: rgba(255, 255, 255, 0.16); }
 .login__input {
   flex: 1;
-  min-width: 220rpx;
+  min-width: 0;
   height: 56rpx;
   padding: 0 16rpx;
-  background: #fff;
-  border: 1px solid #eaf0f2;
-  border-radius: 12rpx;
-  font-size: 24rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 22rpx;
 }
+
+/* ---- 状态文案 ---- */
 .login__status {
-  margin-top: 36rpx;
-  font-size: 30rpx;
-  color: #33454f;
-  font-weight: 600;
+  position: relative;
+  z-index: 2;
+  margin-top: 46rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.4);
 }
 .login__detail {
-  margin-top: 16rpx;
-  color: #c22a2e;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  font-size: 26rpx;
+  position: relative;
+  z-index: 2;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: #ff9a9c;
+  line-height: 1.6;
 }
+
+/* ---- 主按钮 ---- */
 .login__member {
-  margin-top: 36rpx;
+  position: relative;
+  z-index: 2;
+  margin-top: 28rpx;
+  height: 96rpx;
+  line-height: 96rpx;
+  border-radius: 999rpx;
   background: linear-gradient(135deg, #00d6b2, #19a7f8);
   color: #fff;
-  border-radius: 999rpx;
+  font-size: 30rpx;
   font-weight: 700;
-  box-shadow: 0 20rpx 56rpx rgba(0, 184, 160, 0.28);
+  box-shadow: 0 20rpx 48rpx rgba(0, 184, 160, 0.3);
 }
+.login__member::after { border: none; }
+.login__member[disabled] { opacity: 0.6; box-shadow: none; }
+
+/* ---- 开发账号 ---- */
 .login__label {
-  margin: 40rpx 0 12rpx;
-  color: #8a9aa3;
-  font-size: 24rpx;
+  position: relative;
+  z-index: 2;
+  margin-top: 44rpx;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.4);
 }
 .login__merchant {
-  margin-top: 16rpx;
-  background: #fff;
-  color: #00766a;
-  border-radius: 999rpx;
-  border: 1px solid #eaf0f2;
-  font-weight: 600;
+  position: relative;
+  z-index: 2;
+  margin-top: 14rpx;
+  height: 84rpx;
+  line-height: 84rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1rpx solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 24rpx;
+  text-align: left;
+  padding: 0 24rpx;
 }
+.login__merchant::after { border: none; }
 </style>
