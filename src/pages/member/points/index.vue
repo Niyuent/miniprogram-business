@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { onPullDownRefresh, onReachBottom, onShow } from '@dcloudio/uni-app';
 import NetworkBanner from '@/components/NetworkBanner.vue';
 import { dayText, fetchPointAccount, fetchPointTransactions } from '@/services/member';
+import type { MerchantPointBucket } from '@/services/member';
 import { friendlyMessage } from '@/utils/errors';
 
 const loading = ref(true);
@@ -10,6 +11,8 @@ const loadingMore = ref(false);
 const errorText = ref('');
 /** 汇总取自账户接口的真实全量数据；拉不到就整块不渲染，不用流水列表去凑数字。 */
 const summary = ref<{ available: number; expiringSoon: number } | null>(null);
+/** 按发分商家拆开的可用积分：在哪家消费就在哪家获得 */
+const buckets = ref<MerchantPointBucket[]>([]);
 
 async function loadSummary() {
   try {
@@ -18,8 +21,10 @@ async function loadSummary() {
       available: data.summary?.available ?? data.account?.balance ?? 0,
       expiringSoon: data.summary?.expiringSoon ?? 0,
     };
+    buckets.value = data.byMerchant ?? [];
   } catch {
     summary.value = null;
+    buckets.value = [];
   }
 }
 type PointRow = {
@@ -62,7 +67,7 @@ function mapRow(row: {
   if (isEarn) {
     kindTag = isSub ? '专属积分' : '通用积分';
     kindClass = isSub ? 'pm-pill--warn' : 'pm-pill--teal';
-    label = isSub ? '附属消费获得' : '主体消费获得';
+    label = isSub ? '本店消费获得' : '联盟内消费获得';
   }
   return {
     id: row.id,
@@ -106,6 +111,11 @@ function more() {
   load(false);
 }
 
+/** 从某家店点「去兑换」：带着 merchantId 直达那家店自己的兑换区 */
+function goExchange(merchantId: number) {
+  uni.navigateTo({ url: `/pages/member/galaxy/index?merchantId=${merchantId}` });
+}
+
 onShow(() => {
   loadSummary();
   load(true);
@@ -128,7 +138,7 @@ onReachBottom(() => more());
         </view>
         <view class="pm-bignum hero-num">
           <text class="pm-bignum__v">{{ summary ? summary.available : '—' }}</text>
-          <text class="pm-bignum__u">可用积分</text>
+          <text class="pm-bignum__u">积分总览</text>
         </view>
         <view v-if="summary && summary.expiringSoon > 0" class="pm-hero__chip hero-chip">
           <view class="pm-hero__dot" />
@@ -139,7 +149,33 @@ onReachBottom(() => more());
 
     <view class="pm-body">
       <view class="pm-card hint">
-        通用积分可在所有店换券，专属积分仅限在主体店换券
+        上面是所有店的积分总览；兑换时按店单独算，在哪家攒的分就只能在那家店换券
+      </view>
+
+      <view v-if="buckets.length" class="pm-card pm-card--flush byshop">
+        <view class="byshop__head">
+          <text class="byshop__title">按店查看</text>
+          <text class="byshop__sub">点「去兑换」进这家店自己的兑换区</text>
+        </view>
+        <view v-for="b in buckets" :key="b.merchantId" class="shop">
+          <view class="shop__main">
+            <view class="shop__top">
+              <text class="shop__name">{{ b.merchantName }}</text>
+              <text class="pm-pill" :class="b.role === 'SUB' ? 'pm-pill--warn' : 'pm-pill--teal'">
+                {{ b.kindName }}
+              </text>
+            </view>
+            <text class="shop__scope">只在这家店的兑换区可用</text>
+            <text v-if="b.expiringSoon > 0" class="shop__soon">{{ b.expiringSoon }} 分即将过期</text>
+          </view>
+          <view class="shop__right">
+            <view class="shop__points">
+              <text class="shop__num">{{ b.available }}</text>
+              <text class="shop__unit">分</text>
+            </view>
+            <text class="shop__go" hover-class="press" @tap.stop="goExchange(b.merchantId)">去兑换 ›</text>
+          </view>
+        </view>
       </view>
 
       <view v-if="loading && !list.length">
@@ -185,6 +221,43 @@ onReachBottom(() => more());
   font-size: 22rpx; color: #00766a; line-height: 1.5;
   background: #e8fbf7; border-color: #c7f5eb;
   margin-bottom: 20rpx;
+}
+
+.byshop { margin-bottom: 20rpx; }
+.byshop__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 26rpx 30rpx 18rpx;
+}
+.byshop__title { font-size: 27rpx; font-weight: 700; color: #0e1f26; }
+.byshop__sub { font-size: 21rpx; color: #8a9aa3; }
+
+.shop {
+  display: flex; align-items: center; gap: 20rpx;
+  padding: 22rpx 30rpx;
+}
+.shop + .shop { border-top: 1rpx solid #f2f6f7; }
+.shop__main { flex: 1; min-width: 0; }
+.shop__top { display: flex; align-items: center; gap: 12rpx; flex-wrap: wrap; }
+.shop__name {
+  font-size: 26rpx; font-weight: 600; color: #0e1f26;
+  max-width: 340rpx; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.shop__scope { display: block; margin-top: 8rpx; font-size: 21rpx; color: #8a9aa3; line-height: 1.4; }
+.shop__soon { display: block; margin-top: 6rpx; font-size: 20rpx; color: #c0342f; }
+.shop__right {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 10rpx; flex-shrink: 0;
+}
+.shop__points { display: flex; align-items: baseline; gap: 4rpx; }
+.shop__num {
+  font-size: 32rpx; font-weight: 800; color: #00766a;
+  font-variant-numeric: tabular-nums;
+}
+.shop__unit { font-size: 20rpx; color: #8a9aa3; }
+.shop__go {
+  padding: 8rpx 18rpx; border-radius: 999rpx;
+  background: #e8fbf7; color: #00766a;
+  font-size: 21rpx; font-weight: 700; white-space: nowrap;
 }
 
 .rec {

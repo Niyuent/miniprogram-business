@@ -21,7 +21,7 @@ interface TabItem {
 const catalog: Record<string, { text: string; member: string; merchant: string }> = {
   home: { text: '会员码', member: '/pages/member/home/index', merchant: '/pages/member/home/index' },
   wallet: { text: '卡包', member: '/pages/member/wallet/index', merchant: '/pages/member/wallet/index' },
-  mall: { text: '积分商城', member: '/pages/member/mall/index', merchant: '/pages/member/mall/index' },
+  shops: { text: '逛商家', member: '/pages/member/galaxy/index', merchant: '/pages/member/galaxy/index' },
   workbench: { text: '首页', member: '/pages/merchant/workbench/index', merchant: '/pages/merchant/workbench/index' },
   ai: { text: 'AI助手', member: '/pages/merchant/workbench/index', merchant: '/pages/merchant/workbench/index' },
   verify: { text: '核销', member: '/pages/merchant/verify/index', merchant: '/pages/merchant/verify/index' },
@@ -29,12 +29,18 @@ const catalog: Record<string, { text: string; member: string; merchant: string }
 };
 
 const keys = computed(() => {
+  let list: string[] = [];
   if (tabs.value.length) {
-    return tabs.value.map((k) => (k === 'notification' ? 'ai' : k));
+    // 老版本 bootstrap / 本地缓存里还是 'mall'，统一收敛到新的「逛商家」
+    list = tabs.value.map((k) => (k === 'notification' ? 'ai' : k === 'mall' ? 'shops' : k));
+  } else if (role.value === 'merchant') list = [...MERCHANT_TABS];
+  else if (role.value === 'member') list = [...MEMBER_TABS];
+  // 老缓存可能压根没有商城/商家这一项，硬补上，避免「逛商家」入口消失
+  if (role.value !== 'merchant' && list.length && !list.includes('shops')) {
+    const at = list.indexOf('wallet');
+    list.splice(at >= 0 ? at + 1 : list.length, 0, 'shops');
   }
-  if (role.value === 'merchant') return [...MERCHANT_TABS];
-  if (role.value === 'member') return [...MEMBER_TABS];
-  return [];
+  return list;
 });
 
 const items = computed<TabItem[]>(() => {
@@ -54,6 +60,13 @@ function go(item: TabItem) {
   const route = getCurrentPages().slice(-1)[0]?.route || '';
   const merchantHere = route === 'pages/merchant/workbench/index';
   const memberHere = route === 'pages/member/home/index';
+  // 「逛商家」是独立页面（不是首页里的面板），整页切换过去
+  if (item.key === 'shops') {
+    if (route !== 'pages/member/galaxy/index') {
+      uni.reLaunch({ url: '/pages/member/galaxy/index' });
+    }
+    return;
+  }
   if (session.role === 'merchant') {
     desk.merchant = item.key;
     if (!merchantHere) uni.reLaunch({ url: '/pages/merchant/workbench/index' });

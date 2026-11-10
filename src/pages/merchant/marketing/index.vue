@@ -159,7 +159,7 @@ function goIssue(templateId?: number) {
       </view>
       <view v-else-if="!list.length" class="pm-card pm-empty">
         <view class="pm-empty__t">暂无可见券模板</view>
-        <view class="pm-empty__d">主体创建并授权后，这里会列出可核销的券</view>
+        <view class="pm-empty__d">联盟创建并授权后，这里会列出可核销的券</view>
       </view>
       <template v-else>
         <view v-for="item in list" :key="item.id" class="tpl">

@@ -8,12 +8,15 @@ import {
   type SettlementBillRow,
   type SettlementOverview,
 } from '@/services/settlement';
+import { fetchMyClearing, type ClearingMyView } from '@/services/clearing';
 import { friendlyMessage } from '@/utils/errors';
 import { money, periodShort } from '@/utils/format';
 
 const loading = ref(true);
 const errorText = ref('');
 const data = ref<SettlementOverview | null>(null);
+/** 商家互结（跨商家清分）摘要；读失败不影响平台对账单主流程 */
+const clearing = ref<ClearingMyView | null>(null);
 const filter = ref<'ALL' | 'GENERATED' | 'CONFIRMED' | 'DISPUTED'>('ALL');
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -78,13 +81,23 @@ async function load(silent = false) {
   errorText.value = '';
   try {
     data.value = await fetchSettlementOverview();
+    void loadClearing();
   } catch (e) {
     const msg = friendlyMessage(e, '结算数据暂时读不到');
     // 店员账号没有 settlement:view，直接告诉他换账号，而不是让他反复重试
-    errorText.value = msg.includes('权限') ? `${msg}，结算请用商家主体或附属管理员账号查看` : msg;
+    errorText.value = msg.includes('权限') ? `${msg}，结算请用商家账号查看` : msg;
   } finally {
     loading.value = false;
     uni.stopPullDownRefresh();
+  }
+}
+
+/** 互结摘要单独加载：无账期 / 无权限时静默隐藏入口，不干扰智能结算 */
+async function loadClearing() {
+  try {
+    clearing.value = await fetchMyClearing();
+  } catch {
+    clearing.value = null;
   }
 }
 
@@ -93,6 +106,10 @@ onPullDownRefresh(() => load(true));
 
 function openBill(b: SettlementBillRow) {
   uni.navigateTo({ url: `/pages/merchant/settlement/detail?id=${b.id}` });
+}
+
+function goClearing() {
+  uni.navigateTo({ url: '/pages/merchant/clearing/index' });
 }
 </script>
 
@@ -135,6 +152,25 @@ function openBill(b: SettlementBillRow) {
     </view>
 
     <view v-if="errorText" class="error">{{ errorText }}</view>
+
+    <view v-if="clearing" class="xcard" hover-class="xcard--press" @tap="goClearing">
+      <view class="xcard__head">
+        <text class="xcard__title">商家互结</text>
+        <text class="xcard__period">{{ clearing.current?.periodKey || '暂无账期' }}</text>
+      </view>
+      <view class="xcard__sub">会员在本店兑换别家发的券，用掉后按券面值月度轧差</view>
+      <view class="xcard__row">
+        <view class="xcard__cell">
+          <text class="xcard__k">我该补给别家</text>
+          <text class="xcard__v xcard__v--out">¥{{ money(clearing.current?.payable ?? 0) }}</text>
+        </view>
+        <view class="xcard__cell">
+          <text class="xcard__k">别家该补我</text>
+          <text class="xcard__v xcard__v--in">¥{{ money(clearing.current?.receivable ?? 0) }}</text>
+        </view>
+        <text class="xcard__arrow">›</text>
+      </view>
+    </view>
 
     <view v-if="data" class="insight">
       <view class="insight__head">
@@ -563,4 +599,25 @@ function openBill(b: SettlementBillRow) {
   color: #a4611f;
   font-size: 22rpx;
 }
+
+/* 商家互结入口（独立于平台对账单） */
+.xcard {
+  margin: 24rpx 32rpx 0;
+  padding: 26rpx 28rpx;
+  border-radius: 22rpx;
+  background: #fff;
+  box-shadow: 0 6rpx 24rpx rgba(7, 38, 47, 0.06);
+}
+.xcard--press { opacity: 0.86; }
+.xcard__head { display: flex; align-items: center; justify-content: space-between; }
+.xcard__title { font-size: 28rpx; font-weight: 700; color: #173b40; }
+.xcard__period { font-size: 22rpx; color: #8a9aa3; }
+.xcard__sub { margin-top: 10rpx; font-size: 22rpx; color: #8a9aa3; line-height: 1.5; }
+.xcard__row { display: flex; align-items: center; margin-top: 24rpx; }
+.xcard__cell { flex: 1; display: flex; flex-direction: column; gap: 8rpx; }
+.xcard__k { font-size: 21rpx; color: #7d9095; }
+.xcard__v { font-size: 34rpx; font-weight: 800; font-variant-numeric: tabular-nums; }
+.xcard__v--out { color: #d03050; }
+.xcard__v--in { color: #00766a; }
+.xcard__arrow { font-size: 40rpx; color: #b6c5c7; margin-left: 12rpx; }
 </style>

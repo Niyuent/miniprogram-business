@@ -7,6 +7,12 @@
   "transformPx": false,
   "mp-weixin": {
     "appid": "wx7052fab674b8b50f",
+    "permission": {
+      "scope.userLocation": {
+        "desc": "用于按距离展示你附近的商家"
+      }
+    },
+    "requiredPrivateInfos": ["getLocation"],
     "setting": {
       "urlCheck": false,
       "es6": true,

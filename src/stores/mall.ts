@@ -19,6 +19,8 @@ const FRESH_MS = 15000;
 const PAGE_SIZE = 10;
 const MAX_ROWS = 50;
 const flights = new Map<string, Promise<void>>();
+/** 最近一次请求的目标联盟：切换联盟后，旧联盟的迟到响应不得覆盖当前券池 */
+let latestAid = 0;
 
 export function toMallRow(row: CouponTemplate): MallRow {
   return {
@@ -66,6 +68,7 @@ export const useMallStore = defineStore('mall', {
       opts: { force?: boolean; append?: boolean; allianceId?: number } = {},
     ) {
       const aid = opts.allianceId && opts.allianceId > 0 ? opts.allianceId : this.allianceId || 1;
+      latestAid = aid;
       const key = `${aid}:${page}:${opts.append ? 'a' : 'r'}`;
       if (
         !opts.force &&
@@ -81,6 +84,8 @@ export const useMallStore = defineStore('mall', {
 
       const job = fetchCouponTemplates(page, PAGE_SIZE, aid)
         .then((data) => {
+          // 用户已切到别的联盟：丢弃这份迟到的旧联盟数据
+          if (latestAid !== aid) return;
           const rows = (data.list || []).map(toMallRow);
           let merged: MallRow[];
           let keptPage = page;

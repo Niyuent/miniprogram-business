@@ -54,7 +54,7 @@ function pick(id: number, role: 'center' | 'planet') {
       <view class="sat__name">{{ item.name }}</view>
     </view>
     <view v-if="chart && !chart.planets.length" class="empty">
-      {{ chart.mode === 'SUB' ? '本月还没有到店客人' : '还没有附属商家加入轨道' }}
+      {{ chart.mode === 'SUB' ? '本月还没有到店客人' : '还没有商家加入轨道' }}
     </view>
   </view>
 </template>

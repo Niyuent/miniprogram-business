@@ -40,10 +40,18 @@ onShareAppMessage(() => ({
   path: applySharePath(merchantInviteCode(merchantId.value)),
 }));
 
+/** 商家端默认联盟：在「我的联盟」页设置，发分优先落到这里，仍可临时改选 */
+const defaultAlliance = computed(() => {
+  const id = session.currentAllianceId;
+  if (!id) return null;
+  const hit = alliances.value.find((item) => item.allianceId === id);
+  return hit ? { id: hit.allianceId, name: hit.name } : null;
+});
+
 function sampleHint(item: MerchantAllianceItem) {
   const names = (item.sampleMerchants || []).map((m) => m.name).filter(Boolean);
   if (!names.length) {
-    return item.role === 'MAIN' ? '本店为主体商家' : '包含本店';
+    return item.role === 'MAIN' ? '本店可管理这个联盟' : '包含本店';
   }
   const head = names.slice(0, 3).join('、');
   if (item.peerMerchantCount > names.length) {
@@ -67,6 +75,8 @@ async function prepare() {
     storeId.value = desk.storeId;
     merchantId.value = desk.merchantId;
     errorText.value = '';
+    // 预取联盟清单，让「积分归属」在确认弹层里就能显示默认联盟
+    void loadAlliances().catch(() => undefined);
   } catch (error) {
     errorText.value = friendlyMessage(error, '门店信息没有加载出来');
   } finally {
@@ -79,11 +89,11 @@ async function openConfirm(target: ScannedMember) {
   sheetOpen.value = true;
   allianceOpen.value = false;
   selectedAlliance.value = null;
-  alliances.value = [];
   memberLoading.value = true;
   member.value = null;
   amount.value = '';
   errorText.value = '';
+  void loadAlliances().catch(() => undefined);
   try {
     // 与核销页共用 member-desk：兼容 5 分钟票据与旧版会员编号
     const desk = await fetchMemberDesk(target);
@@ -201,13 +211,20 @@ async function confirmEarn() {
       submitting.value = false;
       return;
     }
+    // 「我的联盟」里设过默认联盟：直接发到它名下，弹层里仍可点「更换」临时改
+    const preset = items.find((i) => i.allianceId === session.currentAllianceId);
+    if (preset) {
+      selectedAlliance.value = preset;
+      await doEarn(preset.allianceId, preset.name);
+      return;
+    }
     if (items.length === 1) {
       selectedAlliance.value = items[0];
       // doEarn 自行管理 submitting
       await doEarn(items[0].allianceId, items[0].name);
       return;
     }
-    // 多联盟：弹出选择抽屉
+    // 多联盟且未设默认：弹出选择抽屉
     submitting.value = false;
     allianceOpen.value = true;
   } catch (error) {
@@ -220,6 +237,16 @@ async function pickAlliance(item: MerchantAllianceItem) {
   if (submitting.value) return;
   selectedAlliance.value = item;
   await doEarn(item.allianceId, item.name);
+}
+
+/** 临时改选本次积分的发放联盟（不改「我的联盟」里的默认设置） */
+async function openAlliancePicker() {
+  try {
+    await loadAlliances();
+    allianceOpen.value = true;
+  } catch (error) {
+    uni.showToast({ title: friendlyMessage(error, '联盟列表没有加载出来'), icon: 'none' });
+  }
 }
 
 onPullDownRefresh(() => prepare());
@@ -283,6 +310,10 @@ onShow(() => {
             type="digit"
             placeholder="请输入消费金额"
           />
+          <view class="alliance-pick" hover-class="press" @tap="openAlliancePicker">
+            <text>积分归属：{{ defaultAlliance ? defaultAlliance.name : '发分时选择' }}</text>
+            <text class="alliance-pick__x">更换 ›</text>
+          </view>
           <view v-if="errorText" class="fail">{{ errorText }}</view>
           <button
             class="go"
@@ -310,7 +341,7 @@ onShow(() => {
         >
           <view class="alliance__row">
             <text class="alliance__name">{{ item.name }}</text>
-            <text class="alliance__role">{{ item.role === 'MAIN' ? '主体' : '附属' }}</text>
+            <text class="alliance__role">{{ item.role === 'MAIN' ? '可管理' : '成员' }}</text>
           </view>
           <text class="alliance__desc">{{ sampleHint(item) }}</text>
         </view>
@@ -434,4 +465,10 @@ onShow(() => {
 .tips__t { display: block; font-size: 24rpx; font-weight: 700; color: #33454f; }
 .tips__d { display: block; margin-top: 8rpx; font-size: 22rpx; color: #8a9aa3; line-height: 1.6; }
 .fail__t { font-size: 26rpx; color: #c0342f; line-height: 1.55; }
+.alliance-pick {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 20rpx; padding: 20rpx 22rpx; border-radius: 16rpx;
+  background: #f0f7f6; font-size: 23rpx; color: #38616a;
+}
+.alliance-pick__x { color: #0b8b7b; font-weight: 600; }
 </style>

@@ -11,6 +11,8 @@ export interface BootstrapResult {
   profile?: { name?: string; avatar?: string | null; phone?: string | null };
   merchant?: { id: number; name: string; storeId: number | null } | null;
   tabs?: string[];
+  /** 手机号在另一侧也有账号时可切换身份（会员↔商家） */
+  switchable?: boolean;
 }
 
 function mockWxCode() {
@@ -42,16 +44,14 @@ function wxCode(): Promise<string> {
   });
 }
 
-/** 种子数据里的后台账号，仅供开发者工具切换商家端；发布构建下为空数组。 */
+/** 种子数据里的后台账号，仅供开发者工具快速进入商家端；发布构建下为空数组。 */
 export const MERCHANT_TEST_ACCOUNTS = IS_DEV
   ? ([
-      { username: 'admin', label: '王主体', hint: '主体商家' },
-      { username: 'sub01', label: '陈城南', hint: '城南旗舰店' },
-      { username: 'clerk01', label: '赵店长', hint: '中心店店员' },
+      { phone: '13900000001', label: '星链商盟', hint: '商家' },
+      { phone: '13900000002', label: '城南旗舰店', hint: '商家' },
+      { phone: '13900000101', label: '中心店', hint: '商家' },
     ] as const)
   : [];
-
-const DEMO_PASSWORD = 'Test@123456';
 
 let authEpoch = 0;
 
@@ -92,21 +92,40 @@ async function enterWithToken(accessToken: string, epoch: number): Promise<void>
   });
 }
 
-/** 商家测试：走后台账号登录，再由 bootstrap 判定为商家。仅开发构建可用。 */
-export function loginMerchantAndRoute(username: string): Promise<void> {
-  if (!IS_DEV) return Promise.reject(new Error('商家测试登录仅在开发构建可用'));
+/**
+ * 手机号登录：会员与商家共用入口。
+ * 后端先按手机号匹配后台账号（命中则签发商家令牌），否则按会员处理；
+ * 角色最终以 /mini/bootstrap 返回为准，前端不做判断。
+ */
+export async function phoneLoginAndRoute(phone: string): Promise<void> {
   const epoch = authEpoch;
-  return request<LoginResult>({
-    url: '/auth/login',
+  const logged = await request<LoginResult>({
+    url: '/auth/phone-login',
     method: 'POST',
-    data: { username, password: DEMO_PASSWORD },
+    data: { phone: phone.trim() },
     auth: false,
     redirectOn401: false,
-  }).then((logged) => {
-    if (epoch !== authEpoch) return;
-    if (!logged?.accessToken) throw new Error('登录响应缺少 accessToken');
-    return enterWithToken(logged.accessToken, epoch);
   });
+  if (epoch !== authEpoch) return;
+  if (!logged?.accessToken) throw new Error('登录响应缺少 accessToken');
+  await enterWithToken(logged.accessToken, epoch);
+}
+
+/**
+ * 会员端 ↔ 商家端切换：后端按手机号换发另一侧令牌，
+ * 这里复用 enterWithToken 重新拉 bootstrap 并跳到对应首页。
+ */
+export async function switchRole(mode: MiniRole): Promise<void> {
+  const epoch = authEpoch;
+  const res = await request<{ accessToken: string; role: MiniRole }>({
+    url: '/mini/switch-mode',
+    method: 'POST',
+    data: { mode },
+    redirectOn401: false,
+  });
+  if (epoch !== authEpoch) return;
+  if (!res?.accessToken) throw new Error('切换身份失败：未返回新令牌');
+  await enterWithToken(res.accessToken, epoch);
 }
 
 /** 微信登录成功后只按 /mini/bootstrap 的 role 进入对应首页。 */

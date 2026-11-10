@@ -47,6 +47,10 @@ export interface AllianceMerchant {
   address: string;
   hours: string;
   storeCount: number;
+  /** 我在这家店还剩多少可用积分 */
+  myPoints?: number;
+  /** 我在这家店累计攒到多少积分（含已花掉/已过期） */
+  myEarned?: number;
 }
 
 export interface AllianceGroup {

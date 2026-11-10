@@ -17,7 +17,7 @@
     },
     {
       "path": "pages/member/mall/index",
-      "style": { "navigationBarTitleText": "积分商城" }
+      "style": { "navigationBarTitleText": "逛商家" }
     },
     {
       "path": "pages/member/mine/index",
@@ -29,7 +29,7 @@
     },
     {
       "path": "pages/member/galaxy/index",
-      "style": { "navigationBarTitleText": "周围联盟", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
+      "style": { "navigationBarTitleText": "逛商家", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
     },
     {
       "path": "pages/member/points/index",
@@ -58,6 +58,7 @@
         { "path": "notice/index", "style": { "navigationBarTitleText": "通知" } },
         { "path": "mine/index", "style": { "navigationBarTitleText": "我的" } },
         { "path": "staff/index", "style": { "navigationBarTitleText": "店员与权限", "enableShareAppMessage": true } },
+        { "path": "plan/index", "style": { "navigationBarTitleText": "档位与充值" } },
         { "path": "marketing/index", "style": { "navigationBarTitleText": "营销与卡券", "enableShareAppMessage": true, "enablePullDownRefresh": true, "backgroundTextStyle": "dark" } },
         { "path": "issue/index", "style": { "navigationBarTitleText": "发放代金券" } },
         {
@@ -67,6 +68,18 @@
         {
           "path": "settlement/detail",
           "style": { "navigationBarTitleText": "账单详情" }
+        },
+        {
+          "path": "clearing/index",
+          "style": { "navigationBarTitleText": "商家互结", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
+        },
+        {
+          "path": "alliances/index",
+          "style": { "navigationBarTitleText": "我的联盟", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
+        },
+        {
+          "path": "alliances/detail",
+          "style": { "navigationBarTitleText": "联盟详情", "enablePullDownRefresh": true, "backgroundTextStyle": "dark" }
         }
       ]
     }

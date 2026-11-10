@@ -83,7 +83,7 @@ async function load() {
     disputeReason.value = data.value.disputeDraft || '';
   } catch (e) {
     const msg = friendlyMessage(e, '账单读不出来');
-    errorText.value = msg.includes('权限') ? `${msg}，结算请用商家主体或附属管理员账号查看` : msg;
+    errorText.value = msg.includes('权限') ? `${msg}，结算请用商家账号查看` : msg;
   } finally {
     loading.value = false;
   }

@@ -35,8 +35,16 @@ export function quickIssueCoupon(body: {
   itemName?: string;
   faceValue?: number;
   thresholdAmount?: number;
+  /** 积分兑换所需积分；>0 时该券进入积分兑换商城，会员花 N 积分兑换 */
+  pointsCost?: number;
+  /** 是否上架积分兑换商城；不传由后端推断（有积分价自动上架） */
+  exchangeEnabled?: boolean;
+  /** 每人限兑张数，0 = 不限领 */
+  perUserLimit?: number;
   validDays: number;
   totalStock: number;
+  /** 投放联盟：桥店可选，不传由后端按适用商家推导 */
+  allianceId?: number;
   targetMerchantIds?: number[];
   audience?: 'USER' | 'MERCHANT_VISITORS';
   userId?: number;
@@ -46,11 +54,19 @@ export function quickIssueCoupon(body: {
 }) {
   return request<{
     templateId: number;
+    /** 券实际投放到的联盟商城 */
+    allianceId?: number;
     name: string;
     benefitType?: 'VOUCHER' | 'ITEM';
     itemName?: string | null;
     faceValue: number;
     thresholdAmount: number;
+    pointsCost?: number;
+    exchangeEnabled?: boolean;
+    perUserLimit?: number;
+    /** 适用范围：SPECIFIED_STORES 表示已按所选商家限定核销门店 */
+    applyScope?: string;
+    scopeStoreIds?: number[];
     validDays: number;
     totalStock: number;
     status: string;

@@ -35,6 +35,9 @@ const counts = ref({ UNUSED: 0, USED: 0, EXPIRED: 0 });
 
 const showSkeleton = computed(() => loading.value && !list.value.length && !wallet.snapshot(status.value).ready);
 
+/** 卡包已取消联盟筛选：券能不能用只看适用范围，不再按联盟分组 */
+const visibleList = computed(() => list.value);
+
 /** 7 天内到期（含今天）的未使用券；只统计已加载行，用作提醒足够了。 */
 const expiringRows = computed(() =>
   status.value === 'UNUSED'
@@ -216,13 +219,13 @@ defineExpose({ dispose: () => { clearQrCanvas(); disposeQrCache(); } });
         <view v-else-if="errorText && !list.length" class="pm-card fail">
           <text class="fail__t">{{ errorText }}</text>
         </view>
-        <view v-else-if="!list.length" class="pm-card pm-empty">
+        <view v-else-if="!visibleList.length" class="pm-card pm-empty">
           <view class="pm-empty__t">这里还没有券</view>
-          <view class="pm-empty__d">去积分商城看看，或到店消费领券</view>
+          <view class="pm-empty__d">去「逛商家」选一家店，用攒的积分换一张</view>
         </view>
         <template v-else>
           <view
-            v-for="(item, index) in list"
+            v-for="(item, index) in visibleList"
             :key="item.id"
             class="cpn tap-card list-rise"
             :class="{ 'cpn--off': status !== 'UNUSED' }"
@@ -236,7 +239,7 @@ defineExpose({ dispose: () => { clearQrCanvas(); disposeQrCache(); } });
             </view>
             <view class="cpn__main">
               <text class="cpn__name">{{ item.name }}</text>
-              <text v-if="item.allianceName" class="cpn__alliance">{{ item.allianceName }}</text>
+              <text v-if="item.scopeText" class="cpn__alliance">{{ item.scopeText }}</text>
               <text class="cpn__date" :class="{ 'cpn__date--urgent': isUrgent(item) }">
                 至 {{ item.expire }}{{ urgentText(item) }}
               </text>
@@ -305,4 +308,11 @@ defineExpose({ dispose: () => { clearQrCanvas(); disposeQrCache(); } });
 .more { display: block; text-align: center; color: #8a9aa3; font-size: 22rpx; padding: 24rpx 0; }
 .fail__t { font-size: 26rpx; color: #c0342f; line-height: 1.6; }
 .qr-cache { position: fixed; left: -400px; top: 0; width: 220px; height: 220px; pointer-events: none; }
+.chips { white-space: nowrap; width: 100%; margin-bottom: 18rpx; }
+.chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 12rpx 26rpx; margin-right: 12rpx; border-radius: 999rpx;
+  background: #fff; border: 1rpx solid #eaf0f2; color: #6d818b; font-size: 24rpx;
+}
+.chip.on { background: #07262f; border-color: #07262f; color: #fff; font-weight: 700; }
 </style>

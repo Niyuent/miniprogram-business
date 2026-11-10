@@ -11,6 +11,8 @@ import {
 } from '@/services/merchant';
 import { request } from '@/utils/request';
 import { friendlyMessage } from '@/utils/errors';
+import { useSessionStore } from '@/stores/session';
+import { fetchMyAlliances } from '@/services/alliance-insight';
 
 type TemplateRow = {
   id: number;
@@ -42,6 +44,12 @@ const createForm = ref({
   itemName: '',
   faceValue: 15,
   thresholdAmount: 0,
+  /** 积分兑换所需积分；>0 时该券进入商家积分兑换区，会员花 N 积分兑换 */
+  pointsCost: 0,
+  /** 是否上架商家积分兑换区（仅 pointsCost>0 有意义） */
+  exchangeEnabled: true,
+  /** 每人限兑张数，0 = 不限领 */
+  perUserLimit: 0,
   validDays: 7,
   totalStock: 100,
 });
@@ -58,13 +66,16 @@ const quantity = ref(1);
 const resultText = ref('');
 const issued = ref<IssuedRow[]>([]);
 
+const session = useSessionStore();
+/** 「我的联盟」里设的默认联盟：新建的券归属它，可在联盟页切换 */
+const currentAlliance = ref<{ id: number; name: string } | null>(null);
 const isMain = computed(() => options.value?.merchantType === 'MAIN');
 const canQuickCreate = computed(() => !!options.value?.canQuickCreate);
 const merchants = computed(() => options.value?.merchants || []);
 const current = computed(() => templates.value.find((t) => t.id === templateId.value) || null);
 
 const selectedLabel = computed(() => {
-  if (scopeMode.value === 'all') return `全体联盟（${merchants.value.length} 家）`;
+  if (scopeMode.value === 'all') return `本联盟全体（${merchants.value.length} 家）`;
   if (!selectedIds.value.length) return '请选择商家';
   const names = merchants.value
     .filter((m) => selectedIds.value.includes(m.id))
@@ -92,14 +103,19 @@ const createPreview = computed(() => {
   const f = createForm.value;
   const days = Number(f.validDays) || 7;
   const stock = Number(f.totalStock) || 0;
+  const cost = Math.max(0, Math.floor(Number(f.pointsCost) || 0));
+  const costText =
+    cost > 0 && f.exchangeEnabled ? ` · 会员花 ${cost} 积分兑换` : '';
+  const limitText =
+    cost > 0 && Number(f.perUserLimit) > 0 ? ` · 每人限 ${Math.floor(Number(f.perUserLimit))} 张` : '';
   if (f.benefitType === 'ITEM') {
     const item = f.itemName.trim() || '（请填写物品）';
-    return `本次将发放 ${stock} 张「${item}」兑换券（有效期${days}天）`;
+    return `本次将发放 ${stock} 张「${item}」兑换券（有效期${days}天）${costText}${limitText}`;
   }
   const face = Number(f.faceValue) || 0;
   const thr = Number(f.thresholdAmount) || 0;
   const thrText = thr > 0 ? `满${thr}减${face}` : `${face}元无门槛`;
-  return `本次将发放 ${stock} 张 ${thrText}券（有效期${days}天）`;
+  return `本次将发放 ${stock} 张 ${thrText}券（有效期${days}天）${costText}${limitText}`;
 });
 
 const canSubmit = computed(() => {
@@ -120,6 +136,16 @@ async function load() {
   loading.value = true;
   errorText.value = '';
   try {
+    session.hydrate();
+    // 默认联盟单独取，失败不影响发券主流程（只是不指定 allianceId，由后端推导）
+    void fetchMyAlliances()
+      .then((res) => {
+        const hit = res.list.find((r) => r.allianceId === session.currentAllianceId);
+        currentAlliance.value = hit ? { id: hit.allianceId, name: hit.name } : null;
+      })
+      .catch(() => {
+        currentAlliance.value = null;
+      });
     const opts = await fetchIssueOptions();
     options.value = opts;
     selectedIds.value = [opts.merchantId];
@@ -183,6 +209,9 @@ function openCreateDrawer() {
     itemName: '',
     faceValue: 15,
     thresholdAmount: 0,
+    pointsCost: 0,
+    exchangeEnabled: true,
+    perUserLimit: 0,
     validDays: 7,
     totalStock: 100,
   };
@@ -212,6 +241,16 @@ async function onQuickCreate() {
   const itemName = f.itemName.trim();
   const face = Number(f.faceValue) || 0;
   const thr = Number(f.thresholdAmount) || 0;
+  const cost = Math.max(0, Math.floor(Number(f.pointsCost) || 0));
+  if (cost > 1000000) {
+    uni.showToast({ title: '兑换积分不能超过 100 万', icon: 'none' });
+    return;
+  }
+  const perUserLimit = Math.max(0, Math.floor(Number(f.perUserLimit) || 0));
+  if (perUserLimit > 999) {
+    uni.showToast({ title: '每人限领不能超过 999 张', icon: 'none' });
+    return;
+  }
 
   if (f.benefitType === 'ITEM') {
     if (!itemName) {
@@ -254,8 +293,14 @@ async function onQuickCreate() {
       validDays: days,
       totalStock: stock,
       quantity: Math.min(50, Math.max(1, Number(quantity.value) || 1)),
+      // 积分兑换价：>0 时该券进入商家积分兑换区，会员花 N 积分兑换（后端据此自动上架）
+      pointsCost: cost,
+      exchangeEnabled: f.exchangeEnabled,
+      perUserLimit,
       ...scope,
     };
+    // 券归属「我的联盟」里设的默认联盟；适用商家需属于同一联盟，否则后端会明确拒绝
+    if (currentAlliance.value) payload.allianceId = currentAlliance.value.id;
     if (f.benefitType === 'ITEM') {
       payload.itemName = itemName;
       payload.faceValue = face;
@@ -284,7 +329,12 @@ async function onQuickCreate() {
     const res = await quickIssueCoupon(payload);
     createOpen.value = false;
     uni.showToast({ title: res.issued ? '生成并发放成功' : '券已生成', icon: 'success' });
-    resultText.value = res.message + (res.issueError ? `（${res.issueError}）` : '');
+    const where = res.allianceId ? '，已进入所选商家的积分兑换区' : '';
+    const scopeTip =
+      res.applyScope === 'SPECIFIED_STORES'
+        ? `，限 ${res.scopeStoreIds?.length ?? 0} 家适用门店核销`
+        : '';
+    resultText.value = res.message + where + scopeTip + (res.issueError ? `（${res.issueError}）` : '');
     issued.value = [];
     await load();
     if (res.templateId) templateId.value = res.templateId;
@@ -295,9 +345,13 @@ async function onQuickCreate() {
   }
 }
 
+function goAlliances() {
+  uni.navigateTo({ url: '/pages/merchant/alliances/index' });
+}
+
 function setScope(mode: 'one' | 'multi' | 'all') {
   if (!isMain.value && mode !== 'one') {
-    uni.showToast({ title: '附属商家只能发本店', icon: 'none' });
+    uni.showToast({ title: '当前账号只能发到本店', icon: 'none' });
     return;
   }
   scopeMode.value = mode;
@@ -419,7 +473,7 @@ async function onIssue() {
           <text class="pm-eyebrow">代金券发放</text>
           <view class="pm-hero__chip">
             <view class="pm-hero__dot" />
-            {{ isMain ? '主体商家' : canQuickCreate ? '附属 · 可自建' : '附属商家' }}
+            {{ isMain ? '可发全联盟' : canQuickCreate ? '可自建券' : '本店发券' }}
           </view>
         </view>
 
@@ -435,6 +489,11 @@ async function onIssue() {
           <view class="pm-hero__chip">{{ audience === 'USER' ? '指定会员' : '到店会员' }}</view>
         </view>
       </view>
+    </view>
+
+    <view v-if="currentAlliance" class="alliance-tip" hover-class="press" @tap="goAlliances">
+      <text>券归属：{{ currentAlliance.name }} · 适用商家需属于同一联盟</text>
+      <text class="alliance-tip__x">切换 ›</text>
     </view>
 
     <view class="pm-body">
@@ -495,13 +554,17 @@ async function onIssue() {
                 <text class="pm-row__t ellipsis">{{ m.name }}</text>
               </view>
               <text class="pm-pill" :class="m.role === 'MAIN' ? 'pm-pill--teal' : 'pm-pill--muted'">
-                {{ m.role === 'MAIN' ? '主体' : '附属' }}
+                {{ m.role === 'MAIN' ? '可管理' : '成员' }}
               </text>
             </view>
             <view v-if="!merchants.length" class="pm-empty">
               <view class="pm-empty__d">当前账号暂无可发放商家</view>
             </view>
           </view>
+        </view>
+        <view class="note note--alliance">
+          「适用商家」决定这张券出现在哪些商家的积分兑换区、以及能在哪些门店核销；
+          每家店看到的兑换区都不一样。「全体」指本联盟内全体商家，不跨联盟。
         </view>
 
         <!-- 发放对象 -->
@@ -566,10 +629,10 @@ async function onIssue() {
         <text class="foot">
           {{
             isMain
-              ? '支持选某家 / 多家 / 全体联盟商家发放，立即生效'
+              ? '支持选某家 / 多家 / 本联盟全体商家发放，券会进入这些商家各自的积分兑换区'
               : canQuickCreate
-                ? '可发放授权主体券，或快速新建本店附属券'
-                : '附属商家仅可发放已授权的主体商家代金券'
+                ? '可发放联盟已授权的券，或快速新建本店券'
+                : '当前账号仅可发放联盟已授权的代金券'
           }}
         </text>
       </template>
@@ -677,6 +740,30 @@ async function onIssue() {
             <text class="label">门槛（元，0 = 无门槛）</text>
             <input v-model.number="createForm.thresholdAmount" class="inp" type="digit" />
           </template>
+
+          <!-- 积分兑换价：>0 时该券进入会员的商家积分兑换区，会员花 N 积分兑换 -->
+          <text class="label">兑换所需积分（会员花多少分换这张券）</text>
+          <input v-model.number="createForm.pointsCost" class="inp" type="number" placeholder="0 = 不参与积分兑换（仅直接发放）" />
+          <text class="label label--sub">填 0 则按所选对象直接发放；填 &gt;0 则该券进入「适用商家」各自的积分兑换区，会员用在那家店攒的积分兑换</text>
+
+          <template v-if="createForm.pointsCost > 0">
+            <text class="label">商家积分兑换区</text>
+            <view class="pm-seg">
+              <view
+                class="pm-seg__i"
+                :class="{ 'is-on': createForm.exchangeEnabled }"
+                @tap="createForm.exchangeEnabled = true"
+              >上架</view>
+              <view
+                class="pm-seg__i"
+                :class="{ 'is-on': !createForm.exchangeEnabled }"
+                @tap="createForm.exchangeEnabled = false"
+              >不上架</view>
+            </view>
+            <text class="label">每人限兑张数（0 = 不限领）</text>
+            <input v-model.number="createForm.perUserLimit" class="inp" type="number" placeholder="0 = 不限领" />
+          </template>
+          <text class="label label--sub">上方「适用商家」同时决定这张券能在哪些门店核销；选「全体」只覆盖本联盟内的商家</text>
 
           <view class="pair">
             <view class="pair__i">
@@ -831,6 +918,12 @@ async function onIssue() {
   font-size: 24rpx;
   color: #556670;
   line-height: 1.5;
+}
+.note--alliance {
+  margin-top: 16rpx;
+  background: #eef6f5;
+  color: #3d6a68;
+  font-size: 22rpx;
 }
 
 /* ---------- 数量步进 ---------- */
@@ -1096,6 +1189,13 @@ async function onIssue() {
   color: #8a9aa3;
   font-weight: 600;
 }
+.label--sub {
+  margin: 10rpx 0 0;
+  font-size: 20rpx;
+  font-weight: 500;
+  color: #aab7bf;
+  line-height: 1.5;
+}
 .pair {
   display: flex;
   gap: 16rpx;
@@ -1125,4 +1225,10 @@ async function onIssue() {
   max-width: 56%;
   text-align: right;
 }
+.alliance-tip {
+  display: flex; align-items: center; justify-content: space-between; gap: 16rpx;
+  margin: 20rpx 28rpx 0; padding: 20rpx 24rpx; border-radius: 16rpx;
+  background: #eaf5f3; font-size: 22rpx; line-height: 1.5; color: #38616a;
+}
+.alliance-tip__x { flex-shrink: 0; color: #0b8b7b; font-weight: 600; }
 </style>

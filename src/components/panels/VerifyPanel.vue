@@ -589,11 +589,18 @@ watch(
         </view>
 
         <view class="vf" :class="{ 'vf--busy': scanning }" hover-class="press" @tap="scan">
+          <view class="vf__grid" />
           <view class="vf__corner vf__corner--tl" />
           <view class="vf__corner vf__corner--tr" />
           <view class="vf__corner vf__corner--bl" />
           <view class="vf__corner vf__corner--br" />
           <view class="laser" />
+          <view class="vf__qr">
+            <view class="vf__qr-eye vf__qr-eye--tl" />
+            <view class="vf__qr-eye vf__qr-eye--tr" />
+            <view class="vf__qr-eye vf__qr-eye--bl" />
+            <view class="vf__qr-dot" />
+          </view>
           <text class="vf__hint">{{ scanning ? '正在识别…' : '点此扫码' }}</text>
           <text class="vf__sub">会员码 / 代金券码</text>
         </view>
@@ -767,7 +774,7 @@ watch(
       >
         <view>
           <view class="coupon__n">{{ item.name }}</view>
-          <view class="coupon__d">本店角色 {{ item.role === 'MAIN' ? '主体' : '附属' }}</view>
+          <view class="coupon__d">本店角色 {{ item.role === 'MAIN' ? '可管理' : '成员' }}</view>
         </view>
         <text class="coupon__act">选择</text>
       </view>
@@ -790,26 +797,19 @@ watch(
   margin-top: 12rpx; background: #0e1f26; border-radius: 48rpx; padding: 40rpx 28rpx 32rpx;
   display: flex; flex-direction: column; align-items: center;
 }
-.viewfinder {
-  position: relative; width: 420rpx; height: 420rpx; border-radius: 28rpx;
-  background: rgba(255,255,255,.06); display: flex; align-items: center; justify-content: center;
-}
-.corner { position: absolute; width: 48rpx; height: 48rpx; border-color: #00b8a0; border-style: solid; }
-.c1 { left: 16rpx; top: 16rpx; border-width: 6rpx 0 0 6rpx; border-radius: 8rpx 0 0 0; }
-.c2 { right: 16rpx; top: 16rpx; border-width: 6rpx 6rpx 0 0; border-radius: 0 8rpx 0 0; }
-.c3 { left: 16rpx; bottom: 16rpx; border-width: 0 0 6rpx 6rpx; border-radius: 0 0 0 8rpx; }
-.c4 { right: 16rpx; bottom: 16rpx; border-width: 0 6rpx 6rpx 0; border-radius: 0 0 8rpx 0; }
+/* 扫描光带：上方渐隐拖尾 + 底部亮线，纵向往复 */
 .laser {
-  position: absolute; left: 40rpx; right: 40rpx; height: 4rpx; top: 40%;
-  background: linear-gradient(90deg, transparent, #00d6b2, transparent);
-  animation: laser 1.8s ease-in-out infinite;
+  position: absolute; left: 32rpx; right: 32rpx; height: 56rpx; top: -6%;
+  z-index: 2; pointer-events: none;
+  background: linear-gradient(180deg, rgba(0, 214, 178, 0), rgba(0, 214, 178, 0.34) 70%, rgba(127, 243, 224, 0.85));
+  border-bottom: 2rpx solid rgba(127, 243, 224, 0.95);
+  animation: laser 2.8s ease-in-out infinite;
 }
 @keyframes laser {
-  0% { top: 18%; opacity: .3; }
-  50% { top: 72%; opacity: 1; }
-  100% { top: 18%; opacity: .3; }
+  0% { top: -6%; opacity: 0.25; }
+  50% { top: 78%; opacity: 1; }
+  100% { top: -6%; opacity: 0.25; }
 }
-.scan-hint { color: rgba(255,255,255,.7); font-size: 28rpx; font-weight: 700; }
 .scan-tip { margin-top: 28rpx; color: #fff; font-size: 28rpx; font-weight: 700; }
 .scan-sub { margin-top: 8rpx; color: rgba(255,255,255,.55); font-size: 22rpx; }
 .scan-acts { display: flex; gap: 16rpx; margin-top: 20rpx; }
@@ -914,18 +914,58 @@ watch(
   position: relative; overflow: hidden;
   margin-top: 26rpx; height: 300rpx;
   border-radius: 32rpx;
-  background: rgba(255, 255, 255, 0.06);
+  background:
+    radial-gradient(120% 92% at 50% 0%, rgba(0, 214, 178, 0.2), transparent 64%),
+    linear-gradient(160deg, #0b3f4b, #0a2233 74%);
   border: 1rpx solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 70rpx rgba(4, 22, 30, 0.6);
   display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 12rpx;
+  align-items: center; justify-content: center; gap: 10rpx;
 }
-.vf__corner { position: absolute; width: 34rpx; height: 34rpx; border: 3rpx solid #00d6b2; }
+
+/* 网格底纹：渐变 + background-size 平铺，比 repeating-linear 兼容性稳 */
+.vf__grid {
+  position: absolute; left: 0; right: 0; top: 0; bottom: 0; z-index: 0;
+  background-image:
+    linear-gradient(to right, rgba(0, 214, 178, 0.14) 1rpx, transparent 1rpx),
+    linear-gradient(to bottom, rgba(0, 214, 178, 0.14) 1rpx, transparent 1rpx);
+  background-size: 26rpx 26rpx;
+}
+
+.vf__corner {
+  position: absolute; width: 34rpx; height: 34rpx;
+  border: 3rpx solid #00d6b2;
+  box-shadow: 0 0 14rpx rgba(0, 214, 178, 0.5);
+  z-index: 3;
+}
 .vf__corner--tl { left: 26rpx; top: 26rpx; border-right: none; border-bottom: none; border-radius: 12rpx 0 0 0; }
 .vf__corner--tr { right: 26rpx; top: 26rpx; border-left: none; border-bottom: none; border-radius: 0 12rpx 0 0; }
 .vf__corner--bl { left: 26rpx; bottom: 26rpx; border-right: none; border-top: none; border-radius: 0 0 0 12rpx; }
 .vf__corner--br { right: 26rpx; bottom: 26rpx; border-left: none; border-top: none; border-radius: 0 0 12rpx 0; }
-.vf__hint { position: relative; z-index: 2; font-size: 30rpx; font-weight: 700; color: #fff; }
-.vf__sub { position: relative; z-index: 2; font-size: 20rpx; color: rgba(255, 255, 255, 0.45); }
+
+/* 二维码线框：三个定位角 + 一颗数据点 */
+.vf__qr { position: relative; width: 56rpx; height: 56rpx; z-index: 4; }
+.vf__qr-eye {
+  position: absolute; width: 18rpx; height: 18rpx;
+  border: 2rpx solid rgba(0, 214, 178, 0.9);
+  border-radius: 5rpx;
+}
+.vf__qr-eye--tl { left: 0; top: 0; }
+.vf__qr-eye--tr { right: 0; top: 0; }
+.vf__qr-eye--bl { left: 0; bottom: 0; }
+.vf__qr-dot {
+  position: absolute; right: 7rpx; bottom: 7rpx;
+  width: 8rpx; height: 8rpx; border-radius: 2rpx;
+  background: #00d6b2;
+  box-shadow: 0 0 10rpx rgba(0, 214, 178, 0.95);
+}
+
+.vf__hint { position: relative; z-index: 4; font-size: 30rpx; font-weight: 700; color: #fff; }
+.vf__sub { position: relative; z-index: 4; font-size: 20rpx; color: rgba(255, 255, 255, 0.45); }
+
+/* 识别中：光带提速、角标增亮 */
+.vf--busy .laser { animation-duration: 1.1s; }
+.vf--busy .vf__corner { border-color: #7ff3e0; box-shadow: 0 0 22rpx rgba(127, 243, 224, 0.85); }
 .vf--busy .vf__hint { color: #7ff0dd; }
 
 .scan-acts { display: flex; gap: 20rpx; margin-top: 22rpx; }

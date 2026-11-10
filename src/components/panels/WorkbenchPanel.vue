@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useSessionStore } from '@/stores/session';
 import { fetchFinance, fetchWorkbench, type FinanceCheckup, type WorkbenchData } from '@/services/merchant';
+import { fetchMyAlliances, type MyAlliancesView } from '@/services/alliance-insight';
 import { friendlyMessage } from '@/utils/errors';
 import SlideSheet from '@/components/SlideSheet.vue';
 import { useDeskStore } from '@/stores/desk';
@@ -40,6 +41,13 @@ const headline = ref('');
 const advice = ref('');
 const briefSource = ref<'zero' | 'fallback'>('fallback');
 const inviteCode = computed(() => merchantInviteCode(desk.value?.merchantId));
+/** 工作台「我的联盟」卡片：独立于主数据加载，接口失败不拖垮整页 */
+const allianceView = ref<MyAlliancesView | null>(null);
+const allianceTotal = computed(() => allianceView.value?.total ?? 0);
+const currentAllianceName = computed(() => {
+  const id = session.currentAllianceId;
+  return allianceView.value?.list.find((r) => r.allianceId === id)?.name ?? '';
+});
 
 const greetLine = computed(() => {
   if (!desk.value) return '老板好';
@@ -115,6 +123,18 @@ async function load(silent = false) {
       briefSource.value = 'zero';
     }
 
+    // 联盟卡片单独加载：新接口出问题时工作台主流程照常可用
+    void fetchMyAlliances()
+      .then((res) => {
+        allianceView.value = res;
+        const ids = res.list.map((r) => r.allianceId);
+        if (session.currentAllianceId && !ids.includes(session.currentAllianceId)) {
+          session.setCurrentAlliance(0);
+        }
+        if (!session.currentAllianceId && ids.length === 1) session.setCurrentAlliance(ids[0]);
+      })
+      .catch(() => undefined);
+
     writeSticky(CARD_KEY, {
       greeting: workbench.greeting,
       bossName: workbench.bossName,
@@ -155,6 +175,10 @@ function goIssue() {
 
 function goSettlement() {
   uni.navigateTo({ url: '/pages/merchant/settlement/index' });
+}
+
+function goAlliances() {
+  uni.navigateTo({ url: '/pages/merchant/alliances/index' });
 }
 
 /** 健康分有数据就去问小Z 要建议，没数据就引导补流水，不弹空页面。 */
@@ -312,6 +336,21 @@ watch(
             <view class="pm-hero__dot" />
             <text class="settle__badge-t">AI 已核完</text>
           </view>
+        </view>
+
+        <view class="alliance-entry" hover-class="press" @tap="goAlliances">
+          <view class="alliance-entry__main">
+            <view class="pm-pill pm-pill--teal">我的联盟</view>
+            <view class="alliance-entry__t">{{ currentAllianceName || '查看我加入的联盟' }}</view>
+            <view class="alliance-entry__d">
+              {{
+                allianceTotal
+                  ? `共 ${allianceTotal} 个联盟 · 成员商家、本店经营与结算`
+                  : '按联盟查看成员商家、门店与本店经营数据'
+              }}
+            </view>
+          </view>
+          <text class="alliance-entry__x">›</text>
         </view>
 
         <view class="pm-section">
@@ -480,4 +519,14 @@ watch(
 .sheet-btn.ghost { background: #f1f5f7; color: #33454f; }
 
 .fail__t { font-size: 26rpx; color: #c0342f; line-height: 1.6; }
+
+.alliance-entry {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 20rpx; padding: 26rpx 28rpx; border-radius: 22rpx;
+  background: #fff; box-shadow: 0 6rpx 24rpx rgba(15, 55, 62, .06);
+}
+.alliance-entry__main { flex: 1; min-width: 0; }
+.alliance-entry__t { margin-top: 14rpx; font-size: 30rpx; font-weight: 800; color: #0e1f26; }
+.alliance-entry__d { margin-top: 8rpx; font-size: 22rpx; color: #8a9aa3; line-height: 1.5; }
+.alliance-entry__x { margin-left: 20rpx; font-size: 38rpx; color: #0b8b7b; }
 </style>

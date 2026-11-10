@@ -10,7 +10,6 @@ import {
 } from '@/services/member';
 import { friendlyMessage } from '@/utils/errors';
 import { useDeskStore } from '@/stores/desk';
-import { useMallStore } from '@/stores/mall';
 import { useWalletStore } from '@/stores/wallet';
 import { enableShareMenu, rememberMember } from '@/utils/share';
 import { boostBrightness, restoreBrightness } from '@/utils/brightness';
@@ -118,7 +117,6 @@ async function load(silent = false) {
     unusedCoupons.value = unusedSnap.total || 0;
     // ready=false 说明这一路没拉成功，宁可显示「—」也不能冒充 0
     usedCoupons.value = usedSnap.ready ? usedSnap.total : null;
-    useMallStore().warm().catch(() => undefined);
     loadAlliancesPreview();
     lastLoadedAt = Date.now();
     loading.value = false;
@@ -193,15 +191,15 @@ function goPoints() {
 function showPointsHelp() {
   uni.showModal({
     title: '积分说明',
-    content: '通用积分可在所有店换券，专属积分仅限在主体店换券。',
+    content: '在每家店消费攒的积分，只能在这家店的兑换区换券；换到的券按券面标明的门店使用。',
     showCancel: false,
     confirmText: '知道了',
   });
 }
 
-function goMall() {
-  useMallStore().warm().catch(() => undefined);
-  useDeskStore().member = 'mall';
+function goShops() {
+  // 兑换区已经藏进每家商家里，这里直接带用户去「逛商家」选店
+  uni.reLaunch({ url: '/pages/member/galaxy/index' });
 }
 
 function goAlliance() {
@@ -340,7 +338,7 @@ watch(
 
       <view class="acts">
         <view class="pm-btn pm-btn--ghost" hover-class="press" @tap="goPoints">积分明细</view>
-        <view class="pm-btn pm-btn--primary" hover-class="press" @tap="goMall">去兑换</view>
+        <view class="pm-btn pm-btn--primary" hover-class="press" @tap="goShops">去换券</view>
       </view>
 
       <view v-if="isNewbie && !guideDismissed" class="pm-card guide">
@@ -366,7 +364,7 @@ watch(
           <text class="guide__i">3</text>
           <view class="guide__body">
             <text class="guide__n">积分换代金券</text>
-            <text class="guide__d">在积分商城换券，下次到店直接抵钱</text>
+            <text class="guide__d">在「逛商家」里选一家店，用它攒的积分换券</text>
           </view>
         </view>
         <view class="pm-btn pm-btn--dark guide__btn" hover-class="press" @tap="dismissGuide">知道了，开始用</view>

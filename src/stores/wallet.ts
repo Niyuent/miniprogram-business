@@ -11,8 +11,11 @@ export type WalletRow = {
   expire: string;
   /** 原始到期时间：expire 已被格式化，临期计算必须用这个 */
   expireAt: string;
-  /** 所属联盟/商家名，卡包里告诉用户「这张券在哪家用」 */
+  /** 兼容字段：卡包已取消联盟筛选，保留供旧逻辑读取 */
+  allianceId: number;
   allianceName: string;
+  /** 适用范围文案（核销只认门店范围，不再认联盟） */
+  scopeText: string;
 };
 
 type Bucket = {
@@ -41,7 +44,9 @@ export function toWalletRow(row: CouponCard): WalletRow {
     face: row.faceValue,
     expire: dayText(row.expireAt),
     expireAt: row.expireAt,
+    allianceId: row.allianceId ?? 0,
     allianceName: row.allianceName || '',
+    scopeText: row.scopeText || '',
   };
 }
 

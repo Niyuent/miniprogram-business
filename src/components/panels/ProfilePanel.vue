@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useSessionStore } from '@/stores/session';
-import { loginMerchantAndRoute, MERCHANT_TEST_ACCOUNTS } from '@/services/auth';
+import { phoneLoginAndRoute, switchRole, MERCHANT_TEST_ACCOUNTS } from '@/services/auth';
 import { fetchMe, fetchPointAccount, type AlliancePointAccount } from '@/services/member';
 import { friendlyMessage } from '@/utils/errors';
 import { useDeskStore } from '@/stores/desk';
@@ -109,14 +109,26 @@ function logout() {
   logoutToLogin();
 }
 
-async function enterMerchant(username: string) {
+async function enterMerchant(phone: string) {
   if (switching.value) return;
-  switching.value = username;
+  switching.value = phone;
   try {
-    await loginMerchantAndRoute(username);
+    await phoneLoginAndRoute(phone);
   } catch (error) {
     switching.value = '';
     uni.showToast({ title: friendlyMessage(error, '商家账号没有登录成功'), icon: 'none' });
+  }
+}
+
+/** 手机号同时挂了商家账号时，一键切到商家端（后端按手机号换发令牌） */
+async function switchToMerchant() {
+  if (switching.value) return;
+  switching.value = 'switch';
+  try {
+    await switchRole('merchant');
+  } catch (error) {
+    switching.value = '';
+    uni.showToast({ title: friendlyMessage(error, '这个手机号没有商家账号'), icon: 'none' });
   }
 }
 
@@ -232,12 +244,20 @@ watch(
             <text class="pm-row__x">›</text>
           </view>
           <view class="pm-row" hover-class="press" @tap="go('/pages/member/galaxy/index')">
-            <view class="row-ico">盟</view>
+            <view class="row-ico">店</view>
             <view class="pm-row__main">
-              <view class="pm-row__t">周围商家联盟</view>
-              <view class="pm-row__d">看看联盟里有哪些店</view>
+              <view class="pm-row__t">逛商家</view>
+              <view class="pm-row__d">按距离找附近的店，用攒的积分换券</view>
             </view>
             <text class="pm-row__x">›</text>
+          </view>
+          <view v-if="session.switchable" class="pm-row" hover-class="press" @tap="switchToMerchant">
+            <view class="row-ico row-ico--warm">商</view>
+            <view class="pm-row__main">
+              <view class="pm-row__t">切换到商家端</view>
+              <view class="pm-row__d">这个手机号也绑定了商家账号</view>
+            </view>
+            <text class="pm-row__x">{{ switching === 'switch' ? '切换中' : '›' }}</text>
           </view>
         </view>
 
@@ -248,16 +268,16 @@ watch(
           <view class="pm-card pm-card--flush">
             <view
               v-for="item in MERCHANT_TEST_ACCOUNTS"
-              :key="item.username"
+              :key="item.phone"
               class="pm-row"
               hover-class="press"
-              @tap="enterMerchant(item.username)"
+              @tap="enterMerchant(item.phone)"
             >
               <view class="pm-row__main">
                 <view class="pm-row__t">{{ item.label }}</view>
-                <view class="pm-row__d">{{ item.hint }}</view>
+                <view class="pm-row__d">{{ item.hint }} · {{ item.phone }}</view>
               </view>
-              <text class="pm-row__x">{{ switching === item.username ? '进入中' : '进入 ›' }}</text>
+              <text class="pm-row__x">{{ switching === item.phone ? '进入中' : '进入 ›' }}</text>
             </view>
           </view>
         </block>

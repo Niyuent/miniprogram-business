@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import NetworkBanner from '@/components/NetworkBanner.vue';
-import { loginAndRoute, loginMerchantAndRoute, MERCHANT_TEST_ACCOUNTS } from '@/services/auth';
+import { MERCHANT_TEST_ACCOUNTS, phoneLoginAndRoute } from '@/services/auth';
 import { friendlyMessage, isDomainListError } from '@/utils/errors';
 import { apiBaseUrl, apiHost, DEV_LAN_HOST, HttpError, probeApi, setApiHost } from '@/utils/request';
 import { IS_DEV } from '@/utils/env';
 
-const status = ref('点下方账号进入即可');
+const status = ref('输入手机号即可进入');
 const detail = ref('');
+const phone = ref('');
+/** 正在登录的手机号；空串表示空闲 */
 const pending = ref('');
+const PHONE_RE = /^1[3-9]\d{9}$/;
 const hostDraft = ref(apiHost());
 const probeText = ref('正在检测接口…');
 const probeOk = ref<boolean | null>(null);
@@ -43,10 +46,31 @@ function explain(error: unknown, fallback: string) {
   return base;
 }
 
+type ProbeResult = { ok: boolean; ms: number; detail: string };
+
+/**
+ * 给探活加硬超时兜底。
+ * probeApi 自身已有 8s timeout，但真机弱网/丢包场景下 fail 回调可能不触发，
+ * 界面就会永远停在「正在检测接口…」。这里保证无论底层如何，到点必有结论。
+ */
+function withHardTimeout(task: Promise<ProbeResult>, ms: number): Promise<ProbeResult> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result: ProbeResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish({ ok: false, ms, detail: `超时 ${ms}ms 无响应` }), ms);
+    void task.then(finish).catch(() => finish({ ok: false, ms, detail: '请求异常' }));
+  });
+}
+
 async function runProbe() {
   probeText.value = '正在检测接口…';
   probeOk.value = null;
-  const result = await probeApi();
+  const result = await withHardTimeout(probeApi(), 10000);
   probeOk.value = result.ok;
   domainBlocked.value = !result.ok && /url not in domain list|合法域名/i.test(result.detail);
   if (result.ok) {
@@ -55,10 +79,14 @@ async function runProbe() {
   }
   showNet.value = true;
   if (domainBlocked.value) {
-    probeText.value = '域名校验拦截 → 勾选「不校验合法域名」后编译';
+    probeText.value = '域名校验拦截 → 勾选「不校验合法域名」后重新编译';
     return;
   }
-  probeText.value = `${result.detail}；可试局域网 ${DEV_LAN_HOST}`;
+  if (/超时|timeout|请求失败|网络请求失败/i.test(result.detail)) {
+    probeText.value = `连不上 ${apiHost()}（手机到电脑不通）→ 手机与电脑需同一 WiFi，或改用手机热点`;
+    return;
+  }
+  probeText.value = `${result.detail}；当前 ${apiHost()}，可试局域网 ${DEV_LAN_HOST}`;
 }
 
 function applyHost(host: string) {
@@ -75,31 +103,27 @@ function clearHostOverride() {
   void runProbe();
 }
 
-async function enterMember() {
+/**
+ * 手机号登录：会员与商家共用入口。
+ * 后端按手机号先匹配后台账号（命中进商家端），否则按会员处理，
+ * 角色最终由 /mini/bootstrap 决定，这里不做任何角色判断。
+ */
+async function enterByPhone(target?: string) {
   if (pending.value) return;
-  status.value = '正在通过微信登录…';
+  const value = String(target ?? phone.value).trim();
+  if (!PHONE_RE.test(value)) {
+    status.value = '手机号格式不正确';
+    detail.value = '请输入 11 位手机号，例如 13900000001';
+    return;
+  }
+  status.value = '正在登录…';
   detail.value = '';
-  pending.value = 'member';
+  pending.value = value;
   try {
-    await loginAndRoute();
+    await phoneLoginAndRoute(value);
   } catch (error) {
     status.value = '登录失败';
-    detail.value = explain(error, '微信登录没有成功，可改用下方商家测试账号');
-  } finally {
-    pending.value = '';
-  }
-}
-
-async function enterMerchant(username: string) {
-  if (pending.value) return;
-  status.value = '正在登录商家账号…';
-  detail.value = '';
-  pending.value = username;
-  try {
-    await loginMerchantAndRoute(username);
-  } catch (error) {
-    status.value = '商家登录失败';
-    detail.value = explain(error, '商家账号没有登录成功');
+    detail.value = explain(error, '手机号登录没有成功');
   } finally {
     pending.value = '';
   }
@@ -124,6 +148,7 @@ onMounted(() => {
 
     <view v-if="IS_DEV && showNet" class="login__host">
       <view class="login__probe">{{ probeText }}</view>
+      <view class="login__probe login__probe--dim">请求 {{ apiBaseUrl() }}</view>
       <view v-if="domainBlocked" class="login__domain">{{ DOMAIN_TIP }}</view>
       <view class="login__host-row">
         <button class="login__chip" size="mini" hover-class="press" @tap.stop="applyHost('127.0.0.1')">
@@ -146,28 +171,43 @@ onMounted(() => {
     <view class="login__status">{{ status }}</view>
     <view v-if="detail" class="login__detail">{{ detail }}</view>
 
+    <view class="login__phone">
+      <text class="login__phone-cc">+86</text>
+      <input
+        v-model="phone"
+        class="login__phone-inp"
+        type="number"
+        maxlength="11"
+        placeholder="请输入手机号"
+        placeholder-class="login__ph"
+        :disabled="!!pending"
+        @confirm="enterByPhone()"
+      />
+    </view>
+
     <button
       class="login__member"
       hover-class="press"
-      :loading="pending === 'member'"
+      :loading="!!pending && pending === phone.trim()"
       :disabled="!!pending"
-      @tap="enterMember"
+      @tap="enterByPhone()"
     >
-      {{ pending === 'member' ? '正在登录…' : '微信登录（会员）' }}
+      {{ pending && pending === phone.trim() ? '正在登录…' : '登录' }}
     </button>
+    <view class="login__tip">会员与商家共用手机号登录 · 短信验证码稍后开放</view>
 
     <block v-if="IS_DEV">
-      <view class="login__label">商家测试账号（点一项即可进入）</view>
+      <view class="login__label">商家测试账号（点一项直接进入商家端）</view>
       <button
         v-for="item in MERCHANT_TEST_ACCOUNTS"
-        :key="item.username"
+        :key="item.phone"
         class="login__merchant"
         hover-class="press"
-        :loading="pending === item.username"
+        :loading="pending === item.phone"
         :disabled="!!pending"
-        @tap="enterMerchant(item.username)"
+        @tap="enterByPhone(item.phone)"
       >
-        {{ pending === item.username ? '正在登录…' : `${item.label} · ${item.hint}` }}
+        {{ pending === item.phone ? '正在登录…' : `${item.label} · ${item.hint} · ${item.phone}` }}
       </button>
     </block>
   </view>
@@ -267,6 +307,7 @@ onMounted(() => {
   border: 1rpx solid rgba(255, 255, 255, 0.12);
 }
 .login__probe { font-size: 20rpx; color: rgba(255, 255, 255, 0.55); line-height: 1.6; }
+.login__probe--dim { font-size: 18rpx; color: rgba(255, 255, 255, 0.34); word-break: break-all; }
 .login__domain { margin-top: 8rpx; font-size: 20rpx; color: #ff9a9c; line-height: 1.6; }
 .login__host-row { display: flex; align-items: center; gap: 10rpx; margin-top: 14rpx; }
 .login__chip {
@@ -309,6 +350,54 @@ onMounted(() => {
   font-size: 22rpx;
   color: #ff9a9c;
   line-height: 1.6;
+}
+
+/* ---- 手机号输入 ---- */
+.login__phone {
+  position: relative;
+  z-index: 2;
+  margin-top: 40rpx;
+  display: flex;
+  align-items: center;
+  height: 100rpx;
+  padding: 0 28rpx;
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1rpx solid rgba(255, 255, 255, 0.16);
+}
+.login__phone-cc {
+  flex-shrink: 0;
+  margin-right: 18rpx;
+  font-size: 28rpx;
+  color: rgba(255, 255, 255, 0.75);
+  font-variant-numeric: tabular-nums;
+}
+.login__phone-cc::after {
+  content: '';
+  display: inline-block;
+  width: 1rpx;
+  height: 32rpx;
+  margin-left: 18rpx;
+  vertical-align: middle;
+  background: rgba(255, 255, 255, 0.18);
+}
+.login__phone-inp {
+  flex: 1;
+  min-width: 0;
+  height: 100rpx;
+  font-size: 32rpx;
+  color: #fff;
+  letter-spacing: 1rpx;
+  font-variant-numeric: tabular-nums;
+}
+.login__ph { color: rgba(255, 255, 255, 0.32); font-size: 28rpx; }
+.login__tip {
+  position: relative;
+  z-index: 2;
+  margin-top: 18rpx;
+  text-align: center;
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.34);
 }
 
 /* ---- 主按钮 ---- */
