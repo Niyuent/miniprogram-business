@@ -1,0 +1,32 @@
+**/node_modules
+**/dist
+**/build
+.git
+.github
+.idea
+.vscode
+*.log
+npm-debug.log*
+coverage
+.temp
+.cache
+
+# 环境变量（根目录与各 workspace），避免密钥进镜像
+.env
+**/.env
+server/.env
+web/.env
+.env.local
+.env.*.local
+!.env.example
+!**/.env.example
+
+# 文档与编排（部署时不需要）
+docs
+README.md
+docker-compose.yml
+docker-compose.*.yml
+
+# 本地数据库 / 备份
+*.sql
+backups/

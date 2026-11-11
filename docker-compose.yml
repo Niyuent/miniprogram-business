@@ -1,0 +1,170 @@
+# 商盟系统 · 生产编排：MySQL + server(NestJS) + gateway(Nginx 含前端) [+ screen 仅构建/独立运行]
+#
+# 使用：
+#   cp .env.example .env
+#   docker compose build screen        # 可选：构建独立前端镜像（不参与运行时）
+#   docker compose up -d --build       # 构建并启动 mysql / server / gateway
+#   访问：http://localhost（网关）  http://localhost/api/docs（Swagger）
+#
+# 仅本地起数据库做开发：
+#   docker compose up -d mysql
+#
+# 依赖链：
+#   mysql(healthy) → server(healthy) → gateway
+#   gateway 镜像自带前端产物（多阶段构建），不依赖共享卷
+
+services:
+  # ---------------------------------------------------------------- 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: shangmeng-mysql
+    restart: unless-stopped
+    ports:
+      - '${MYSQL_PORT:-3306}:3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-shangmeng}
+      MYSQL_USER: ${MYSQL_USER:-shangmeng}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-shangmeng}
+      TZ: ${TZ:-Asia/Shanghai}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-time-zone=+08:00
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uroot', '-p${MYSQL_ROOT_PASSWORD:-root}']
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks: [shangmeng]
+
+  # ---------------------------------------------------------------- 后端服务
+  server:
+    container_name: shangmeng-server
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: shangmeng-server:${TAG:-latest}
+    restart: unless-stopped
+    # 生产不直接暴露，统一走网关；调试时打开下面两行
+    # ports:
+    #   - '${SERVER_PORT:-3000}:3000'
+    environment:
+      # 默认 production（安全优先）：NODE_ENV=production 时自动关闭 Swagger /api/docs。
+      # 本地开发请在 .env 里显式写 NODE_ENV=development 打开它。
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL}
+      PORT: ${SERVER_PORT:-3000}
+      API_PREFIX: ${API_PREFIX:-api/v1}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-2h}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      # 仅用于外部系统对接（SSE publish / stats / 临时调试令牌）
+      API_TOKEN: ${API_TOKEN}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      SSE_HEARTBEAT_MS: ${SSE_HEARTBEAT_MS:-30000}
+      SSE_TICKET_TTL_MS: ${SSE_TICKET_TTL_MS:-60000}
+      # 微信登录（S5.1 / P0 安全加固）：WX_MODE 未配置默认 real（生产安全默认）。
+      # 本地开发用 mock（仅非生产 + 内网 IP 生效）；生产必须 real 且提供 APPID/SECRET，否则拒绝启动。
+      WX_MODE: ${WX_MODE:-real}
+      WX_APPID: ${WX_APPID:-}
+      WX_SECRET: ${WX_SECRET:-}
+      # AI：Laya 在同一 compose 网络里，服务名 laya。DeepSeek 与小Z经营助手同一套变量，没配密钥则日报文案走模板。
+      LAYA_SERVICE_URL: ${LAYA_SERVICE_URL:-http://laya:8765}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
+      DEEPSEEK_FLASH_MODEL: ${DEEPSEEK_FLASH_MODEL:-}
+      DEEPSEEK_PRO_MODEL: ${DEEPSEEK_PRO_MODEL:-}
+      TZ: ${TZ:-Asia/Shanghai}
+      # MVP 上传落本地磁盘；后续换 OSS 时改 UploadService 实现即可
+      UPLOAD_DIR: ${UPLOAD_DIR:-/app/uploads}
+    volumes:
+      # 宿主机 ./uploads 持久化，容器重建不丢营业执照
+      - ./uploads:/app/uploads
+      # 挂载 migrations：容器里跑 prisma migrate dev 生成的新迁移直接落到宿主仓库，
+      # 不用再 docker compose cp 拷贝（见 docs/05 排错表）。仓库始终持有迁移，重建镜像不会丢。
+      - ./server/prisma/migrations:/app/server/prisma/migrations
+      # 挂载 seed.ts：让容器内重新 seed 使用宿主最新权限定义（如 report:view/export），无需重建镜像
+      - ./server/prisma/seed.ts:/app/server/prisma/seed.ts
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:${SERVER_PORT:-3000}/api/v1/health || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks: [shangmeng]
+
+  # ---------------------------------------------------------------- Laya 决策模型（经营日报的状态判断，不生成文字）
+  # 挂了不影响 server 启动：日报会降级成数字模板。首次拉镜像含权重，体积较大。
+  laya:
+    image: bmw8080/laya-decision-api:latest
+    container_name: shangmeng-laya
+    restart: unless-stopped
+    ports:
+      - '${LAYA_PORT:-8765}:8765'
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ['CMD', 'python', '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8765/readyz", timeout=5)']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks: [shangmeng]
+
+  # ---------------------------------------------------------------- 网关（Nginx + 前端静态资源）
+  gateway:
+    container_name: shangmeng-gateway
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.gateway
+      args:
+        VITE_USE_MOCK: ${VITE_USE_MOCK:-false}
+        VITE_API_BASE: ${VITE_API_BASE:-/api/v1}
+    image: shangmeng-gateway:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - '${NGINX_PORT:-80}:80'
+    volumes:
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1/ || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks: [shangmeng]
+
+  # ---------------------------------------------------------------- 前端独立镜像（screen）
+  # 默认不启动（profiles），仅用于：① 单独静态托管 ② 发布到对象存储 ③ 本地独立验证
+  #   docker compose build screen
+  #   docker compose --profile assets up -d screen   → http://localhost:8080
+  screen:
+    container_name: shangmeng-screen
+    profiles: ['assets']
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        VITE_USE_MOCK: ${VITE_USE_MOCK:-false}
+        VITE_API_BASE: ${VITE_API_BASE:-/api/v1}
+    image: shangmeng-screen:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - '${SCREEN_PORT:-8080}:80'
+    networks: [shangmeng]
+
+volumes:
+  mysql-data:
+  nginx-logs:
+
+networks:
+  shangmeng:
+    driver: bridge

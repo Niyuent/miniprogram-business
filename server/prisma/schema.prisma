@@ -1,0 +1,1160 @@
+// 商盟系统 · 代金券积分平台
+// 设计文档：docs/02-数据库设计.md
+// 业务硬约束：docs/04-业务规则与验收用例.md
+//
+// 约定：
+// 1. 主键使用自增 Int（无符号），避免 BigInt 在 JSON 序列化上的坑；
+// 2. point_rules：allianceId + merchantId=0 表示「该联盟默认规则」；
+// 3. 券码绑定为单向：仅 coupon_codes.instanceId 指向实例，coupon_instances.code 为冗余只读展示字段；
+// 4. 关键业务约束同时落库（唯一索引）与 Service 层（明确原因码）；
+// 5. 多联盟：积分池 / 券模板按 allianceId 隔离；商家角色见 merchant_alliances。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- 枚举
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum MerchantType {
+  MAIN // 1 主体商家（平台方）—— 多联盟后以 MerchantAlliance.role 为准；本字段过渡期保留
+  SUB  // 2 附属商家（入驻门店）
+}
+
+/// 商家在某联盟内的角色（多联盟：同一商家可在 A 当 MAIN、在 B 当 SUB）
+enum AllianceRole {
+  MAIN
+  SUB
+}
+
+/// 计费类型：
+/// - MAIN_MEMBER：主体商家会员（平台使用资格，38.8/月、109/季、209/半年、418/年）
+/// - SUB_TIER：附属商家档位（决定可加入联盟数量，19.9/月）
+enum MerchantPlanType {
+  MAIN_MEMBER
+  SUB_TIER
+}
+
+/// 附属商家档位：
+/// - PRIMARY 初级合作商，默认，最多 2 个联盟，标识黄色
+/// - ADVANCED 高级合作商，19.9/月，最多 10 个联盟，标识亮紫
+enum SubTier {
+  PRIMARY
+  ADVANCED
+}
+
+enum PlanPeriod {
+  MONTH
+  QUARTER
+  HALF_YEAR
+  YEAR
+}
+
+enum SubscriptionStatus {
+  PENDING   // 已提交，待后台确认收款
+  ACTIVE    // 已生效
+  EXPIRED   // 已到期
+  CANCELLED // 已取消/驳回
+}
+
+enum MerchantStatus {
+  PENDING   // 1 待审核
+  APPROVED  // 2 已通过
+  SUSPENDED // 3 已暂停
+  REJECTED  // 4 已拒绝
+}
+
+enum StoreStatus {
+  OPEN
+  CLOSED
+}
+
+enum AdminUserType {
+  PLATFORM
+  MERCHANT
+  STORE
+}
+
+enum RoleScope {
+  PLATFORM
+  MERCHANT
+  STORE
+}
+
+enum AuthType {
+  ISSUE_MAIN_COUPON // 发放主体商家代金券
+}
+
+enum AuthStatus {
+  ENABLED
+  DISABLED
+}
+
+enum TemplateScope {
+  ALL       // 全部主体券
+  SPECIFIED // 指定券模板
+}
+
+enum CouponOwnerType {
+  MAIN_COUPON // 1 主体券
+  SUB_COUPON  // 2 附属商家券
+}
+
+enum CouponType {
+  VOUCHER  // 代金券（满减）
+  DISCOUNT // 折扣券（预留）
+}
+
+enum ValidType {
+  FIXED               // 固定有效期
+  AFTER_RECEIVE_DAYS  // 兑换/领取后 N 天有效
+}
+
+enum ApplyScope {
+  ALL_STORES
+  SPECIFIED_STORES
+  SPECIFIED_MERCHANTS
+}
+
+enum CouponTemplateStatus {
+  DRAFT
+  PUBLISHED
+  UNPUBLISHED
+  VOID
+}
+
+enum CouponInstanceStatus {
+  UNUSED
+  USED
+  EXPIRED
+  FROZEN
+}
+
+enum CouponCodeStatus {
+  UNISSUED
+  ISSUED
+  REDEEMED
+  VOID
+}
+
+enum CouponSource {
+  EXCHANGE        // 积分兑换
+  MERCHANT_ISSUE  // 商家发放
+  GIFT            // 活动赠送
+}
+
+enum PointTxnType {
+  EARN
+  SPEND
+  EXPIRE
+  REFUND
+  ADJUST
+}
+
+enum ExpireMode {
+  FIXED_MONTHS
+  YEAR_END
+}
+
+enum OrderType {
+  CONSUME  // 线下消费
+  EXCHANGE // 积分兑换
+}
+
+enum OrderStatus {
+  NORMAL
+  ABNORMAL
+  REFUNDED
+  CANCELED
+}
+
+enum OrderSource {
+  APPLET
+  WEB
+  IMPORT
+}
+
+enum RedemptionStatus {
+  SUCCESS
+  REVERSED
+}
+
+enum RedemptionChannel {
+  MANUAL
+  SCAN
+  API
+}
+
+enum SettleStatus {
+  UNSETTLED
+  SETTLED
+}
+
+/// 商家互结（清分）账单状态：生成后待打款 → 平台标记已结算
+enum MerchantClearingBillStatus {
+  UNSETTLED
+  SETTLED
+}
+
+/// 账期状态：全部账单结算完毕后关闭，关闭后不允许重算
+enum MerchantClearingPeriodStatus {
+  GENERATED
+  CLOSED
+}
+
+enum ReportType {
+  PURCHASE
+  REDEMPTION
+  SUMMARY
+}
+
+enum ReportStatus {
+  GENERATING
+  GENERATED
+  CONFIRMED
+  DISPUTED
+}
+
+enum ReceiverType {
+  MERCHANT
+  STORE
+  USER
+  PLATFORM
+}
+
+enum NotificationType {
+  SYSTEM
+  AUDIT_RESULT
+  AUTH_CHANGE
+  ABNORMAL_ORDER
+  SETTLEMENT
+  AI_PLATFORM_ALERT
+}
+
+enum NotifyLevel {
+  NORMAL
+  IMPORTANT
+  URGENT
+}
+
+enum ReadStatus {
+  UNREAD
+  READ
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILED
+}
+
+enum ChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ---------------------------------------------------------------- 用户
+
+model User {
+  id           Int        @id @default(autoincrement()) @db.UnsignedInt
+  phone        String     @unique @db.VarChar(20)
+  nickname     String?    @db.VarChar(50)
+  avatar       String?    @db.VarChar(255)
+  openid       String?    @db.VarChar(64)
+  unionid      String?    @db.VarChar(64)
+  status       UserStatus @default(ACTIVE)
+  /// 邀请人（C 端拉新归因）：会员分享带来的新用户，首触记录，不覆盖
+  inviterId    Int?       @db.UnsignedInt
+  registeredAt DateTime   @default(now())
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  pointAccounts    PointAccount[]
+  couponInstances  CouponInstance[]
+  orders           Order[]
+  redemptions      RedemptionRecord[]
+  pointTxns        PointTransaction[]
+  exchanges        ExchangeRecord[]
+  inviter          User?  @relation("UserInviter", fields: [inviterId], references: [id])
+  invitedUsers     User[] @relation("UserInviter")
+
+  @@index([status])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------- 联盟（多租户）
+
+/// 联盟：一组商家的积分/券隔离边界。盟主 = mainMerchantId。
+model Alliance {
+  id             Int      @id @default(autoincrement()) @db.UnsignedInt
+  name           String   @db.VarChar(100)
+  /// 盟主商家（该联盟的 MAIN）；允许同一商家担任多个联盟的盟主
+  mainMerchantId Int      @db.UnsignedInt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  mainMerchant Merchant            @relation("AllianceMain", fields: [mainMerchantId], references: [id])
+  memberships  MerchantAlliance[]
+  pointAccounts PointAccount[]
+  pointTxns    PointTransaction[]
+  coupons      CouponTemplate[]
+  pointRules   PointRule[]
+
+  @@index([mainMerchantId])
+  @@map("alliances")
+}
+
+/// 商家 ↔ 联盟 多对多关系。替代「一个商家只能有一个 type」的旧模型。
+model MerchantAlliance {
+  id         Int          @id @default(autoincrement()) @db.UnsignedInt
+  merchantId Int          @db.UnsignedInt
+  allianceId Int          @db.UnsignedInt
+  role       AllianceRole
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  alliance Alliance @relation(fields: [allianceId], references: [id])
+
+  @@unique([merchantId, allianceId])
+  @@index([allianceId, role])
+  @@map("merchant_alliances")
+}
+
+// ---------------------------------------------------------------- 商家 / 门店
+
+model Merchant {
+  id            Int             @id @default(autoincrement()) @db.UnsignedInt
+  /// @deprecated 多联盟后以 MerchantAlliance 为准；迁移期保留兼容旧代码
+  parentId      Int?            @db.UnsignedInt // 附属商家指向主体；主体为 null
+  /// @deprecated 多联盟后以 MerchantAlliance.role 为准；迁移期保留
+  type          MerchantType
+  name          String          @db.VarChar(100)
+  code          String          @unique @db.VarChar(32)
+  contactName   String?         @db.VarChar(50)
+  contactPhone  String?         @db.VarChar(20)
+  licenseNo     String?         @db.VarChar(64)
+  licenseImages Json?
+  province      String?         @db.VarChar(32)
+  city          String?         @db.VarChar(32)
+  district      String?         @db.VarChar(32)
+  address       String?         @db.VarChar(255)
+  // 线下结算联系人（仅记录，系统不参与资金结算）
+  settleContact String?         @db.VarChar(255)
+  status        MerchantStatus  @default(PENDING)
+  /// 邀请人商家（入驻归因）：附属商家由哪个主体商家邀请入驻，审核通过后保留
+  inviterId     Int?            @db.UnsignedInt
+  auditRemark   String?         @db.VarChar(255)
+  auditorId     Int?            @db.UnsignedInt
+  auditedAt     DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  parent       Merchant?  @relation("MerchantTree", fields: [parentId], references: [id])
+  children     Merchant[] @relation("MerchantTree")
+  inviter      Merchant?  @relation("MerchantInviter", fields: [inviterId], references: [id])
+  invitedMerchants Merchant[] @relation("MerchantInviter")
+  stores       Store[]
+  adminUsers   AdminUser[]
+  coupons      CouponTemplate[]       @relation("CouponOwner")
+  createdCoupons CouponTemplate[]     @relation("CouponCreator")
+  authAsMain   MerchantAuthorization[] @relation("AuthMain")
+  authAsSub    MerchantAuthorization[] @relation("AuthSub")
+  purchaseAsMain PurchaseRecord[]     @relation("PurchaseMain")
+  purchaseAsSub  PurchaseRecord[]     @relation("PurchaseSub")
+  settlementReports SettlementReport[]
+  alliancesAsMain Alliance[]          @relation("AllianceMain")
+  allianceMemberships MerchantAlliance[]
+  subscriptions MerchantSubscription[]
+
+  @@index([parentId, status])
+  @@index([type, status])
+  @@map("merchants")
+}
+
+/// 商家计费订单：档位（附属）与会员（主体）共用一张表。
+///
+/// 为什么不做两张表：两者的生命周期完全一致——提交申请（PENDING）→ 后台确认到账（ACTIVE）
+/// → 到期（EXPIRED），续费也只是在同一个商家上再插一条并顺延 endsAt。
+/// 拆成两张表会让「这个商家当前是否在服务期」变成一个跨表 union 判断，得不偿失。
+///
+/// 资金线下收款，系统只记录状态（与 purchase_records 的处理方式一致）。
+model MerchantSubscription {
+  id         Int      @id @default(autoincrement()) @db.UnsignedInt
+  merchantId Int      @db.UnsignedInt
+  planType   MerchantPlanType
+  /// 仅 SUB_TIER 有值；MAIN_MEMBER 恒为 null
+  tier       SubTier?
+  period     PlanPeriod
+  amount     Decimal  @db.Decimal(12, 2)
+  /// 生效区间：PENDING 时为空，确认收款时写入
+  startsAt   DateTime?
+  endsAt     DateTime?
+  status     SubscriptionStatus @default(PENDING)
+  orderNo    String   @unique @db.VarChar(32)
+  /// 预留：OFFLINE（后台确认）/ WXPAY（以后接支付回调写入）
+  payChannel String   @default("OFFLINE") @db.VarChar(16)
+  payRemark  String?  @db.VarChar(255)
+  confirmedById Int?  @db.UnsignedInt
+  confirmedAt   DateTime?
+  cancelledAt   DateTime?
+  remark     String?  @db.VarChar(255)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, planType, status])
+  @@index([status, endsAt])
+  @@map("merchant_subscriptions")
+}
+
+model Store {
+  id           Int         @id @default(autoincrement()) @db.UnsignedInt
+  merchantId   Int         @db.UnsignedInt
+  name         String      @db.VarChar(100)
+  code         String?     @db.VarChar(32)
+  contactName  String?     @db.VarChar(50)
+  contactPhone String?     @db.VarChar(20)
+  province     String?     @db.VarChar(32)
+  city         String?     @db.VarChar(32)
+  district     String?     @db.VarChar(32)
+  address      String?     @db.VarChar(255)
+  lng          Decimal?    @db.Decimal(10, 7)
+  lat          Decimal?    @db.Decimal(10, 7)
+  businessHours String?    @db.VarChar(100)
+  logo         String?     @db.VarChar(255)
+  status       StoreStatus @default(OPEN)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  merchant         Merchant              @relation(fields: [merchantId], references: [id])
+  templates        CouponTemplateStore[]
+  orders           Order[]
+  redemptions      RedemptionRecord[]
+  changeRequests   StoreChangeRequest[]
+
+  @@index([merchantId, status])
+  @@map("stores")
+}
+
+model AdminUser {
+  id           Int           @id @default(autoincrement()) @db.UnsignedInt
+  username     String        @unique @db.VarChar(50)
+  passwordHash String        @db.VarChar(255)
+  realName     String?       @db.VarChar(50)
+  phone        String?       @db.VarChar(20)
+  merchantId   Int?          @db.UnsignedInt
+  storeId      Int?          @db.UnsignedInt
+  userType     AdminUserType @default(MERCHANT)
+  status       UserStatus    @default(ACTIVE)
+  lastLoginAt  DateTime?
+  lastLoginIp  String?       @db.VarChar(64)
+
+  /// true = 管理员审核通过后自动生成的账号，首次登录必须改密。
+  /// 未改密前除 PUT /auth/password 外的接口一律拒绝（见 JwtAuthGuard）。
+  mustChangePassword Boolean @default(false) @map("must_change_password")
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  merchant Merchant?        @relation(fields: [merchantId], references: [id])
+  roles    AdminUserRole[]
+
+  @@index([merchantId])
+  @@map("admin_users")
+}
+
+// ---------------------------------------------------------------- 权限四表
+
+model Role {
+  id          Int       @id @default(autoincrement()) @db.UnsignedInt
+  code        String    @unique @db.VarChar(50)
+  name        String    @db.VarChar(50)
+  scope       RoleScope @default(MERCHANT)
+  description String?   @db.VarChar(255)
+  createdAt   DateTime  @default(now())
+
+  permissions RolePermission[]
+  users       AdminUserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          Int      @id @default(autoincrement()) @db.UnsignedInt
+  code        String   @unique @db.VarChar(80)
+  name        String   @db.VarChar(80)
+  group       String   @db.VarChar(50)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       Int @db.UnsignedInt
+  permissionId Int @db.UnsignedInt
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model AdminUserRole {
+  adminUserId Int @db.UnsignedInt
+  roleId      Int @db.UnsignedInt
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id])
+  role      Role      @relation(fields: [roleId], references: [id])
+
+  @@id([adminUserId, roleId])
+  @@map("admin_user_roles")
+}
+
+// ---------------------------------------------------------------- 授权
+
+model MerchantAuthorization {
+  id             Int           @id @default(autoincrement()) @db.UnsignedInt
+  mainMerchantId Int           @db.UnsignedInt
+  subMerchantId  Int           @db.UnsignedInt
+  authType       AuthType      @default(ISSUE_MAIN_COUPON)
+  status         AuthStatus    @default(ENABLED)
+  templateScope  TemplateScope @default(ALL)
+  grantedBy      Int?          @db.UnsignedInt
+  grantedAt      DateTime      @default(now())
+  revokedBy      Int?          @db.UnsignedInt
+  revokedAt      DateTime?
+  revokeReason   String?       @db.VarChar(255)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  mainMerchant Merchant                         @relation("AuthMain", fields: [mainMerchantId], references: [id])
+  subMerchant  Merchant                         @relation("AuthSub", fields: [subMerchantId], references: [id])
+  templates    MerchantAuthorizationTemplate[]
+
+  @@unique([mainMerchantId, subMerchantId, authType])
+  @@index([subMerchantId, status])
+  @@map("merchant_authorizations")
+}
+
+model MerchantAuthorizationTemplate {
+  authorizationId Int @db.UnsignedInt
+  templateId      Int @db.UnsignedInt
+
+  authorization MerchantAuthorization @relation(fields: [authorizationId], references: [id])
+  template      CouponTemplate        @relation(fields: [templateId], references: [id])
+
+  @@id([authorizationId, templateId])
+  @@map("merchant_authorization_templates")
+}
+
+// ---------------------------------------------------------------- 代金券
+
+model CouponTemplate {
+  id                Int                  @id @default(autoincrement()) @db.UnsignedInt
+  /// 所属联盟（券与积分池同联盟隔离）
+  allianceId        Int                  @db.UnsignedInt
+  // H1：创建者必须是该联盟内 role=MAIN 的主体商家
+  creatorMerchantId Int                  @db.UnsignedInt
+  ownerMerchantId   Int                  @db.UnsignedInt
+  ownerType         CouponOwnerType      @default(MAIN_COUPON)
+  name              String               @db.VarChar(100)
+  subtitle          String?              @db.VarChar(100)
+  couponType        CouponType           @default(VOUCHER)
+  faceValue         Decimal              @db.Decimal(12, 2)
+  thresholdAmount   Decimal              @default(0) @db.Decimal(12, 2)
+  pointsCost        Int                  @default(0)
+  /// 是否参与积分兑换（商家自选开关）：关掉即从兑换商城下架，但已发出的券不受影响。
+  /// 默认 true 兼容存量——历史上 pointsCost>0 即视为可兑，这里保持同样效果。
+  exchangeEnabled   Boolean              @default(true)
+  purchasePrice     Decimal              @default(0) @db.Decimal(12, 2)
+  totalStock        Int                  @default(0)
+  issuedCount       Int                  @default(0)
+  usedCount         Int                  @default(0)
+  validType         ValidType            @default(AFTER_RECEIVE_DAYS)
+  validStart        DateTime?
+  validEnd          DateTime?
+  validDays         Int                  @default(30)
+  applyScope        ApplyScope           @default(ALL_STORES)
+  /// 每人限领（limit_per_user）：0=不限；与 ADV claimLimitMode 同步
+  perUserLimit      Int                  @default(1)
+  /// 核销时是否要求订单实付金额 > 面值（商家自选开关）
+  requireGreaterThanFace Boolean         @default(false)
+  /// 高级营销范围 JSON：claimLimitMode / productScope / productIds / issueDeadline*
+  applicableScope   Json?
+  status            CouponTemplateStatus @default(DRAFT)
+  description       String?              @db.VarChar(500)
+  /// 商家可读规则备注（ADV 块创建/更新时已剥离并落到独立列）
+  rules             String?              @db.Text
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  alliance        Alliance                        @relation(fields: [allianceId], references: [id])
+  creatorMerchant Merchant                        @relation("CouponCreator", fields: [creatorMerchantId], references: [id])
+  ownerMerchant   Merchant                        @relation("CouponOwner", fields: [ownerMerchantId], references: [id])
+  stores          CouponTemplateStore[]
+  codes           CouponCode[]
+  batches         CouponCodeBatch[]
+  instances       CouponInstance[]
+  authTemplates   MerchantAuthorizationTemplate[]
+  purchases       PurchaseRecord[]
+  redemptions     RedemptionRecord[]
+  exchanges       ExchangeRecord[]
+
+  @@index([allianceId, status])
+  @@index([creatorMerchantId, status])
+  @@index([ownerMerchantId, ownerType])
+  @@map("coupon_templates")
+}
+
+model CouponTemplateStore {
+  templateId Int @db.UnsignedInt
+  storeId    Int @db.UnsignedInt
+
+  template CouponTemplate @relation(fields: [templateId], references: [id])
+  store    Store          @relation(fields: [storeId], references: [id])
+
+  @@id([templateId, storeId])
+  @@map("coupon_template_stores")
+}
+
+/// 券码批次（S2.2）
+///
+/// 为什么单独一张表：`coupon_codes.batchNo` 是**冗余字段**（一批 N 个码共享同一个 batchNo），
+/// 没法在 `coupon_codes` 上加唯一约束；而「同批次重复生成必须拒绝」需要数据库级唯一保证，
+/// 否则并发请求会同时通过应用层 `count()` 预检。这里用 `batchNo @unique` 承接该约束，
+/// 命中 P2002 即翻译为 `BATCH_ALREADY_EXISTS`。
+model CouponCodeBatch {
+  id         Int      @id @default(autoincrement()) @db.UnsignedInt
+  batchNo    String   @unique @db.VarChar(32)
+  templateId Int      @db.UnsignedInt
+  quantity   Int
+  remark     String?  @db.VarChar(200)
+  operatorId Int?     @db.UnsignedInt
+  createdAt  DateTime @default(now())
+
+  template CouponTemplate @relation(fields: [templateId], references: [id])
+  codes    CouponCode[]
+
+  @@index([templateId])
+  @@map("coupon_code_batches")
+}
+
+model CouponCode {
+  id          Int              @id @default(autoincrement()) @db.UnsignedInt
+  code        String           @unique @db.VarChar(32)
+  templateId  Int              @db.UnsignedInt
+  batchNo     String           @db.VarChar(32)
+  // 所属批次：与 batchNo 冗余字段对应，便于按批次统计
+  batchId     Int?             @db.UnsignedInt
+  // 单向绑定：仅在此处绑定实例，发放事务内写入一次
+  instanceId  Int?             @unique @db.UnsignedInt
+  status      CouponCodeStatus @default(UNISSUED)
+  generatedAt DateTime         @default(now())
+
+  template CouponTemplate  @relation(fields: [templateId], references: [id])
+  batch    CouponCodeBatch? @relation(fields: [batchId], references: [id])
+  instance CouponInstance? @relation(fields: [instanceId], references: [id])
+
+  @@index([templateId, status])
+  @@index([batchNo])
+  @@index([batchId])
+  @@map("coupon_codes")
+}
+
+model CouponInstance {
+  id               Int                  @id @default(autoincrement()) @db.UnsignedInt
+  userId           Int                  @db.UnsignedInt
+  templateId       Int                  @db.UnsignedInt
+  // 冗余只读展示字段（券码以 coupon_codes.code 为准）
+  code             String?              @db.VarChar(32)
+  issuerMerchantId Int?                 @db.UnsignedInt
+  source           CouponSource         @default(EXCHANGE)
+  pointsCost       Int                  @default(0)
+  status           CouponInstanceStatus @default(UNUSED)
+  obtainedAt       DateTime             @default(now())
+  expireAt         DateTime
+  usedAt           DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id])
+  template CouponTemplate @relation(fields: [templateId], references: [id])
+  codeRef  CouponCode?
+  order    Order?
+  redemptions RedemptionRecord[]
+  pointTxns   PointTransaction[]
+  exchanges   ExchangeRecord[]
+
+  @@index([userId, status])
+  @@index([templateId, status])
+  @@index([expireAt])
+  @@index([issuerMerchantId, obtainedAt])
+  @@index([obtainedAt])
+  @@map("coupon_instances")
+}
+
+// ---------------------------------------------------------------- 积分
+
+model PointAccount {
+  id           Int      @id @default(autoincrement()) @db.UnsignedInt
+  userId       Int      @db.UnsignedInt
+  /// 积分池按联盟隔离：同一用户在不同联盟各有一个账户
+  allianceId   Int      @db.UnsignedInt
+  balance      Int      @default(0)
+  totalEarned  Int      @default(0)
+  totalSpent   Int      @default(0)
+  totalExpired Int      @default(0)
+  version      Int      @default(0) // 乐观锁
+  updatedAt    DateTime @updatedAt
+
+  user         User               @relation(fields: [userId], references: [id])
+  alliance     Alliance           @relation(fields: [allianceId], references: [id])
+  transactions PointTransaction[]
+
+  @@unique([userId, allianceId])
+  @@index([allianceId])
+  @@map("point_accounts")
+}
+
+model PointTransaction {
+  id                       Int           @id @default(autoincrement()) @db.UnsignedInt
+  userId                   Int           @db.UnsignedInt
+  accountId                Int           @db.UnsignedInt
+  /// 与账户同联盟；冗余便于按联盟查流水，不跨池
+  allianceId               Int           @db.UnsignedInt
+  type                     PointTxnType
+  amount                   Int // 带符号：获取为正，消耗/过期为负
+  remainingAmount          Int           @default(0) // 批次剩余（FIFO 扣减对象）
+  balanceAfter             Int           @default(0)
+  expireAt                 DateTime? // 本批次有效期
+  relatedOrderId           Int?          @db.UnsignedInt
+  relatedCouponInstanceId  Int?          @db.UnsignedInt
+  sourceTransactionId      Int?          @db.UnsignedInt // 幂等键用：仅 EXPIRE 指回被清零的 EARN 批次
+  originBatchId            Int?          @db.UnsignedInt // S4 收口：SPEND/REFUND 指回原 EARN 批次
+  /// 发分商家（source_merchant）；兑换消耗等场景可为空
+  merchantId               Int?          @db.UnsignedInt
+  /// 发分商家在该联盟的角色（MAIN/SUB）；兑换/过期等非发分流水为空
+  sourceRole               AllianceRole?
+  storeId                  Int?          @db.UnsignedInt
+  operatorId               Int?          @db.UnsignedInt
+  remark                   String?       @db.VarChar(255)
+  createdAt                DateTime      @default(now())
+
+  user     User            @relation(fields: [userId], references: [id])
+  account  PointAccount    @relation(fields: [accountId], references: [id])
+  alliance Alliance        @relation(fields: [allianceId], references: [id])
+  couponInstance CouponInstance? @relation(fields: [relatedCouponInstanceId], references: [id])
+
+  @@index([userId, allianceId, type, createdAt])
+  @@index([allianceId, createdAt])
+  @@index([merchantId, storeId, createdAt])
+  @@index([createdAt])
+  @@index([expireAt, remainingAmount])
+  // 幂等键（S3.3 积分过期清零）：同一 EARN 批次只能有一条 EXPIRE 流水。
+  // sourceTransactionId **仅 EXPIRE** 使用（指回被清零的 EARN 批次），其余类型恒为 NULL
+  // （MySQL 唯一索引允许多个 NULL，不冲突）；SPEND/REFUND 与 EARN 批次的关联改用 originBatchId，
+  // 否则同一用户从同一批次二次扣分会撞唯一键（S4 收口修复）。
+  @@unique([userId, sourceTransactionId, type])
+  @@map("point_transactions")
+}
+
+/// 积分兑换记录（S3.2）
+///
+/// 为什么单独一张表，而不是「从 point_transactions 里筛 SPEND」：
+/// 1. **幂等键** `@@unique([userId, requestId])` 必须有落点 —— 前端生成 UUID 做 requestId，
+///    「用户快速双击兑换」这类重复提交要靠数据库唯一约束兜住，光靠应用层先查再插拦不住并发；
+/// 2. 兑换要同时回答「花了多少积分 / 换了哪张券 / 哪次请求」，跨 point_transactions 与
+///    coupon_instances 两张表，没有一张记录表就只能靠约定拼，对账时说不清。
+model ExchangeRecord {
+  id               Int      @id @default(autoincrement()) @db.UnsignedInt
+  userId           Int      @db.UnsignedInt
+  templateId       Int      @db.UnsignedInt
+  couponInstanceId Int?     @db.UnsignedInt
+  // 本次兑换消耗的积分（下单时的模板 points_cost 快照，模板后来改价不影响历史）
+  pointsCost       Int      @default(0)
+  /// 幂等键：前端生成 UUID；同一用户重复提交同一 requestId 返回上次结果
+  requestId        String   @db.VarChar(64)
+  channel          String   @default("H5")
+  merchantId       Int?     @db.UnsignedInt
+  operatorId       Int?     @db.UnsignedInt
+  remark           String?  @db.VarChar(255)
+  createdAt        DateTime @default(now())
+
+  user           User            @relation(fields: [userId], references: [id])
+  template       CouponTemplate  @relation(fields: [templateId], references: [id])
+  couponInstance CouponInstance? @relation(fields: [couponInstanceId], references: [id])
+
+  @@unique([userId, requestId])
+  @@index([userId, createdAt])
+  @@index([templateId])
+  @@map("exchange_records")
+}
+
+model PointRule {
+  id                Int        @id @default(autoincrement()) @db.UnsignedInt
+  /// 所属联盟；不同联盟可配置不同比例
+  allianceId        Int        @db.UnsignedInt
+  // 0 = 该联盟下的默认规则（非某商家专属）
+  merchantId        Int        @default(0) @db.UnsignedInt
+  earnRatio         Decimal    @default(1) @db.Decimal(8, 2) // 每消费 1 元获得积分
+  minAmount         Decimal    @default(0) @db.Decimal(12, 2)
+  pointsValidMonths Int        @default(12)
+  expireMode        ExpireMode @default(FIXED_MONTHS)
+  effectiveAt       DateTime   @default(now())
+  status            Int        @default(1) // 1 生效 0 失效
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  alliance Alliance @relation(fields: [allianceId], references: [id])
+
+  @@unique([allianceId, merchantId, status])
+  @@index([allianceId, status])
+  @@map("point_rules")
+}
+
+// ---------------------------------------------------------------- 订单 / 核销
+
+model Order {
+  id               Int         @id @default(autoincrement()) @db.UnsignedInt
+  orderNo          String      @unique @db.VarChar(32)
+  userId           Int         @db.UnsignedInt
+  merchantId       Int         @db.UnsignedInt
+  storeId          Int?        @db.UnsignedInt
+  // H7：仅 CONSUME / EXCHANGE，券采购走 purchase_records
+  orderType        OrderType   @default(CONSUME)
+  totalAmount      Decimal     @default(0) @db.Decimal(12, 2)
+  discountAmount   Decimal     @default(0) @db.Decimal(12, 2)
+  payAmount        Decimal     @default(0) @db.Decimal(12, 2)
+  // H3：一单仅一张券，唯一索引兜底
+  couponInstanceId Int?        @unique @db.UnsignedInt
+  pointsEarned     Int         @default(0)
+  status           OrderStatus @default(NORMAL)
+  abnormalType     String?     @db.VarChar(50)
+  abnormalRemark   String?     @db.VarChar(500)
+  handledBy        Int?        @db.UnsignedInt
+  handledAt        DateTime?
+  handleResult     String?     @db.VarChar(500)
+  source           OrderSource @default(WEB)
+  consumeTime      DateTime    @default(now())
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id])
+  store          Store?          @relation(fields: [storeId], references: [id])
+  couponInstance CouponInstance? @relation(fields: [couponInstanceId], references: [id])
+
+  @@index([merchantId, storeId, createdAt])
+  @@index([merchantId, storeId, consumeTime])
+  @@index([consumeTime])
+  @@index([userId])
+  @@map("orders")
+}
+
+model RedemptionRecord {
+  id               Int               @id @default(autoincrement()) @db.UnsignedInt
+  couponInstanceId Int               @db.UnsignedInt
+  code             String            @db.VarChar(32)
+  userId           Int               @db.UnsignedInt
+  storeId          Int?              @db.UnsignedInt
+  merchantId       Int?              @db.UnsignedInt
+  operatorId       Int?              @db.UnsignedInt
+  templateId       Int               @db.UnsignedInt
+  faceValue        Decimal           @default(0) @db.Decimal(12, 2)
+  discountAmount   Decimal           @default(0) @db.Decimal(12, 2)
+  orderId          Int?              @db.UnsignedInt
+  channel          RedemptionChannel @default(MANUAL)
+  status           RedemptionStatus  @default(SUCCESS)
+  /// 幂等键：前端一次确认生成一个；同键重试返回首次结果（200 + idempotent:true），不是 409
+  requestId        String?           @db.VarChar(64)
+  // 冲正：原因必填（≥5 字符），与审计日志双写，供事后追溯
+  reverseReason    String?           @db.VarChar(500)
+  reversedAt       DateTime?
+  redeemedAt       DateTime          @default(now())
+  createdAt        DateTime          @default(now())
+
+  couponInstance CouponInstance @relation(fields: [couponInstanceId], references: [id])
+  user           User           @relation(fields: [userId], references: [id])
+  store          Store?         @relation(fields: [storeId], references: [id])
+  template       CouponTemplate @relation(fields: [templateId], references: [id])
+
+  // H4：同一券不可能存在两条 SUCCESS 记录（冲正后 status 变更，允许再次核销）
+  @@unique([couponInstanceId, status])
+  // 幂等键：同 (userId, requestId) 重复提交返回上次结果（与 point_transactions 同 pattern）
+  @@unique([userId, requestId])
+  @@index([merchantId, storeId, redeemedAt])
+  @@map("redemption_records")
+}
+
+// ---------------------------------------------------------------- 采购 / 对账
+
+model PurchaseRecord {
+  id             Int          @id @default(autoincrement()) @db.UnsignedInt
+  purchaseNo     String       @unique @db.VarChar(32)
+  subMerchantId  Int          @db.UnsignedInt
+  mainMerchantId Int          @db.UnsignedInt
+  templateId     Int          @db.UnsignedInt
+  quantity       Int
+  unitPrice      Decimal      @db.Decimal(12, 2)
+  totalAmount    Decimal      @db.Decimal(12, 2)
+  // 资金结算线下完成，系统只记录状态
+  settleStatus   SettleStatus @default(UNSETTLED)
+  settleRemark   String?      @db.VarChar(255)
+  purchasedAt    DateTime     @default(now())
+  operatorId     Int?         @db.UnsignedInt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  subMerchant  Merchant       @relation("PurchaseSub", fields: [subMerchantId], references: [id])
+  mainMerchant Merchant       @relation("PurchaseMain", fields: [mainMerchantId], references: [id])
+  template     CouponTemplate @relation(fields: [templateId], references: [id])
+
+  @@index([subMerchantId, settleStatus])
+  @@map("purchase_records")
+}
+
+model SettlementReport {
+  id           Int          @id @default(autoincrement()) @db.UnsignedInt
+  reportNo     String       @unique @db.VarChar(32)
+  periodStart  DateTime
+  periodEnd    DateTime
+  merchantId   Int?         @db.UnsignedInt // null = 全平台
+  reportType   ReportType   @default(SUMMARY)
+  totalCount   Int          @default(0)
+  totalAmount  Decimal      @default(0) @db.Decimal(12, 2)
+  status       ReportStatus @default(GENERATED)
+  detail       Json?
+  generatedBy  Int?         @db.UnsignedInt
+  generatedAt  DateTime     @default(now())
+  confirmedAt  DateTime?
+  // S4.2 收口：异议原因此前只落 audit_logs，账单详情无法回显；改为同时落账单表便于前台展示
+  disputeReason String?     @db.VarChar(500)
+
+  merchant Merchant? @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, periodStart, periodEnd])
+  @@map("settlement_reports")
+}
+
+// ---------------------------------------------------------------- 商家互结（清分）
+
+/// 商家互结账期（自然月）。
+/// 口径（产品确认）：
+///  - 只有「已核销」且来自积分兑换的券入账，按 redeemedAt 归月（左闭右开）；
+///  - 付款方 A = 兑换进入的商家（exchange_records.merchantId），
+///    收款方 B = 发券商家（coupon_templates.ownerMerchantId）；A === B 直接排除；
+///  - 金额取券面值（redemption_records.faceValue 快照）；
+///  - 同一商家对双向轧差，只出一条净额账单。
+/// 与 SettlementReport 的区别：后者是「平台 → 单个商家」的对账单，
+/// 本组表是「商家 → 商家」的清分，两套账互不干扰。
+model MerchantClearingPeriod {
+  id             Int                           @id @default(autoincrement()) @db.UnsignedInt
+  /// YYYY-MM，全局唯一
+  periodKey      String                        @unique @db.VarChar(7)
+  /// 左闭右开：periodStart <= redeemedAt < periodEnd
+  periodStart    DateTime
+  periodEnd      DateTime
+  billCount      Int                           @default(0)
+  itemCount      Int                           @default(0)
+  /// 本期所有净额账单合计（轧差后）
+  netTotal       Decimal                       @default(0) @db.Decimal(12, 2)
+  status         MerchantClearingPeriodStatus @default(GENERATED)
+  generatedBy    Int?                          @db.UnsignedInt
+  generatedAt    DateTime                      @default(now())
+  recalculatedAt DateTime?
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+
+  bills MerchantClearingBill[]
+
+  @@map("merchant_clearing_periods")
+}
+
+/// 按「商家对」轧差后的净额账单：payerMerchantId 应补 receiverMerchantId。
+/// grossForward / grossReverse 保留双向原始金额，便于核对抵扣过程；
+/// 明细行仍按原始方向（A→B）保存，反向的即抵扣项。
+model MerchantClearingBill {
+  id                 Int                        @id @default(autoincrement()) @db.UnsignedInt
+  periodId           Int                        @db.UnsignedInt
+  payerMerchantId    Int                        @db.UnsignedInt
+  receiverMerchantId Int                        @db.UnsignedInt
+  /// 净额方向上的原始合计
+  grossForward       Decimal                    @default(0) @db.Decimal(12, 2)
+  /// 反方向原始合计（被抵扣掉的部分）
+  grossReverse       Decimal                    @default(0) @db.Decimal(12, 2)
+  netAmount          Decimal                    @default(0) @db.Decimal(12, 2)
+  forwardCount       Int                        @default(0)
+  reverseCount       Int                        @default(0)
+  status             MerchantClearingBillStatus @default(UNSETTLED)
+  settledAt          DateTime?
+  settledBy          Int?                       @db.UnsignedInt
+  settleRemark       String?                    @db.VarChar(255)
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  period MerchantClearingPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  items  MerchantClearingItem[]
+
+  // MySQL 索引名上限 64 字符，显式指定短名，避免自动生成的长名建表失败
+  @@unique([periodId, payerMerchantId, receiverMerchantId], map: "mc_bills_period_payer_receiver_key")
+  @@index([payerMerchantId, status])
+  @@index([receiverMerchantId, status])
+  @@map("merchant_clearing_bills")
+}
+
+/// 清分明细：一条已核销券一行，是「这张券是哪家换的」的可追溯落点。
+/// 刻意不对 merchants 建外键：seed 会清空业务表，无外键的账本表不会被级联误伤，
+/// 商家名称在查询时按 id 批量补全即可。
+model MerchantClearingItem {
+  id                 Int      @id @default(autoincrement()) @db.UnsignedInt
+  billId             Int      @db.UnsignedInt
+  redemptionId       Int      @unique @db.UnsignedInt
+  exchangeRecordId   Int?     @db.UnsignedInt
+  couponInstanceId   Int      @db.UnsignedInt
+  templateId         Int      @db.UnsignedInt
+  /// A：兑换进入的商家（付款方）
+  payerMerchantId    Int      @db.UnsignedInt
+  /// B：发券商家（收款方）
+  receiverMerchantId Int      @db.UnsignedInt
+  /// C：实际核销商家，仅用于追溯，不参与资金方向
+  redeemMerchantId   Int?     @db.UnsignedInt
+  storeId            Int?     @db.UnsignedInt
+  userId             Int      @db.UnsignedInt
+  code               String?  @db.VarChar(32)
+  templateName       String?  @db.VarChar(128)
+  faceValue          Decimal  @default(0) @db.Decimal(12, 2)
+  pointsCost         Int      @default(0)
+  redeemedAt         DateTime
+  createdAt          DateTime @default(now())
+
+  bill MerchantClearingBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+  @@index([redeemedAt])
+  @@map("merchant_clearing_items")
+}
+
+// ---------------------------------------------------------------- 通知 / 日志 / 变更申请
+
+model Notification {
+  id           Int              @id @default(autoincrement()) @db.UnsignedInt
+  receiverType ReceiverType
+  receiverId   Int              @db.UnsignedInt
+  type         NotificationType @default(SYSTEM)
+  title        String           @db.VarChar(100)
+  content      String           @db.VarChar(1000)
+  level        NotifyLevel      @default(NORMAL)
+  bizType      String?          @db.VarChar(50)
+  bizId        Int?             @db.UnsignedInt
+  // S5.4-B1：发布人（admin_users.id）；「全部发送」展开成 N 行时每行都填
+  senderId     Int?             @db.UnsignedInt
+  // S5.4-B1：一次发送动作的批次号（UUID）。展开的 N 行共享同一值，「我发过的通知」据此聚合，
+  // 避免用「标题 + 秒级时间」分组时把同一秒内的两次同名发送误合并。
+  sendBatchId  String?          @db.VarChar(36)
+  // ⚠️ deprecated：S5.4-B1 起已读状态以 NotificationRead（每人一条）为准，本列**停止写入**，
+  //    仅为平滑回滚保留；S7 双向对流改造时随 schema 大改一并删除。
+  readStatus   ReadStatus       @default(UNREAD)
+  readAt       DateTime?
+  createdAt    DateTime         @default(now())
+
+  reads NotificationRead[]
+
+  // 多态接收方：receiverType + receiverId，不建外键
+  @@index([receiverType, receiverId, readStatus])
+  @@index([senderId, createdAt])
+  @@map("notifications")
+}
+
+/// S5.4-B1：通知的「每人各自已读」记录。
+/// 同一门店通知在库中只有一行，店员与附属管理员各记一条阅读记录，互不影响。
+model NotificationRead {
+  id             Int      @id @default(autoincrement()) @db.UnsignedInt
+  notificationId Int      @db.UnsignedInt
+  adminUserId    Int      @db.UnsignedInt
+  readAt         DateTime @default(now())
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, adminUserId])
+  @@index([adminUserId])
+  @@map("notification_reads")
+}
+
+/// AI 调用记录（经营日报 / Laya / DeepSeek / chat）。只记请求摘要与成败，不记密钥。
+model AiCallLog {
+  id           Int      @id @default(autoincrement()) @db.UnsignedInt
+  provider     String   @db.VarChar(20) // laya | deepseek | chat
+  purpose      String   @db.VarChar(40) // daily-status | daily-copy | intent
+  merchantId   Int?     @db.UnsignedInt
+  ok           Boolean
+  latencyMs    Int      @db.UnsignedInt
+  error        String?  @db.VarChar(255)
+  requestJson  Json?
+  responseJson Json?
+  sessionId    String?  @db.VarChar(64)
+  intent       String?  @db.VarChar(40)
+  toolCalls    Json?
+  tokenIn      Int?     @db.UnsignedInt
+  tokenOut     Int?     @db.UnsignedInt
+  createdAt    DateTime @default(now())
+
+  @@index([provider, createdAt])
+  @@index([merchantId, createdAt])
+  @@index([sessionId, createdAt])
+  @@map("ai_call_logs")
+}
+
+model AuditLog {
+  id           Int         @id @default(autoincrement()) @db.UnsignedInt
+  operatorId   Int?        @db.UnsignedInt
+  operatorType String?     @db.VarChar(32)
+  operatorName String?     @db.VarChar(50)
+  module       String      @db.VarChar(50)
+  action       String      @db.VarChar(50)
+  targetType   String?     @db.VarChar(50)
+  targetId     Int?        @db.UnsignedInt
+  beforeData   Json?
+  afterData    Json?
+  ip           String?     @db.VarChar(64)
+  userAgent    String?     @db.VarChar(255)
+  result       AuditResult @default(SUCCESS)
+  createdAt    DateTime    @default(now())
+
+  @@index([module, createdAt])
+  @@index([operatorId])
+  @@map("audit_logs")
+}
+
+model StoreChangeRequest {
+  id           Int          @id @default(autoincrement()) @db.UnsignedInt
+  storeId      Int          @db.UnsignedInt
+  merchantId   Int          @db.UnsignedInt
+  applicantId  Int?         @db.UnsignedInt
+  changes      Json // { field: { old, new } }
+  reason       String?      @db.VarChar(500)
+  status       ChangeStatus @default(PENDING)
+  reviewerId   Int?         @db.UnsignedInt
+  reviewRemark String?      @db.VarChar(255)
+  reviewedAt   DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@index([status, createdAt])
+  @@map("store_change_requests")
+}

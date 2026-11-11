@@ -1,0 +1,16 @@
+-- 平台巡检：通知类型 + 接收方 PLATFORM
+ALTER TABLE `notifications` MODIFY COLUMN `type` ENUM(
+  'SYSTEM',
+  'AUDIT_RESULT',
+  'AUTH_CHANGE',
+  'ABNORMAL_ORDER',
+  'SETTLEMENT',
+  'AI_PLATFORM_ALERT'
+) NOT NULL DEFAULT 'SYSTEM';
+
+ALTER TABLE `notifications` MODIFY COLUMN `receiverType` ENUM(
+  'MERCHANT',
+  'STORE',
+  'USER',
+  'PLATFORM'
+) NOT NULL;

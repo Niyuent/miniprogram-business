@@ -1,47 +1,98 @@
-# 商盟小程序
+# 商盟系统 · 完整可运行项目
 
-会员端和商家端都在这个目录里，技术栈是 uni-app（Vue 3 + Vite + TypeScript + Pinia）。
+一个仓库包含三块代码，克隆后即可启动：
 
-## 安装依赖
+| 目录 | 作用 | 技术栈 |
+| --- | --- | --- |
+| `server/` | 后端 API：积分、券、联盟、商家互清分、登录 | NestJS + Prisma + MySQL 8 |
+| `web/` | 平台 / 商家管理后台 | Vue3 + Vite + Element Plus |
+| `web-mini/` | 会员端 + 商家端小程序 | uni-app（Vue3 + Vite + TypeScript） |
 
-在 `web-mini` 目录执行：
+`deploy/` 是网关 Nginx 配置与镜像；根 `docker-compose.yml` 编排 MySQL、后端、网关（网关内含管理后台静态资源）。
+
+---
+
+## 一、最快：Docker Compose 一键启动
+
+需要 Docker Desktop（Compose v2），且 80 / 3306 端口未被占用。
 
 ```bash
+cp .env.example .env
+docker compose up -d --build          # mysql -> server -> gateway
+```
+
+| 入口 | 地址 |
+| --- | --- |
+| 管理后台 | http://localhost |
+| 后端健康检查 | http://localhost/api/v1/health |
+| Swagger | http://localhost/api/docs |
+
+后端容器启动命令里已有 `npx prisma migrate deploy`，会自动建表。首次灌演示数据：
+
+```bash
+docker compose exec -T server npm run prisma:seed
+```
+
+> `.env.example` 里的口令是**仅本地开发用的默认值**。公网部署前必须修改 `MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD`、`JWT_SECRET`、`API_TOKEN`，并让 `DATABASE_URL` 中的密码与 `MYSQL_PASSWORD` 保持一致。`.env` 已被 `.gitignore` 排除，请勿提交。
+
+---
+
+## 二、本地开发（改代码用）
+
+```bash
+# 1. 只起数据库（后端仍在本机跑）
+cp .env.example .env
+docker compose up -d mysql
+
+# 2. 安装 server + web 的依赖（npm workspaces）
 npm install
+
+# 3. 本地环境变量
+cp server/.env.example server/.env
+cp web/.env.example web/.env.development.local
+
+# 4. 建库建表 + 演示数据
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:seed
+
+# 5. 起服务（两个终端）
+npm run dev:server                   # http://localhost:3000
+npm run dev:web                      # http://localhost:5173
 ```
 
-## 本地运行 H5
+管理后台通过 Vite 代理把 `/api/v1` 转发到 `http://127.0.0.1:3000`。只想看前端界面时，把 `VITE_USE_MOCK` 改成 `true` 即可不依赖后端。
+
+---
+
+## 三、小程序
+
+小程序不在根 workspaces 里，需要单独安装依赖：
 
 ```bash
-npm run dev:h5 -- --port 5175
+cd web-mini
+npm install
+npm run dev:mp-weixin                # 产物 dist/dev/mp-weixin，改代码实时更新
+npm run build:mp-weixin              # 产物 dist/build/mp-weixin，用于上传发布
+npm run dev:h5 -- --port 5175         # 浏览器预览 H5
 ```
 
-浏览器打开 `http://localhost:5175/`。H5 没有微信登录，验收时把 C 端或商家 JWT 写入 `localStorage` 的 `mini_token`，并写入 `mini_role`（`member` 或 `merchant`）。
+- 用微信开发者工具导入 `web-mini/dist/build/mp-weixin`。注意 `web-mini/project.config.json` 的 `miniprogramRoot` 默认指向 `dist/dev/mp-weixin/`，导入 build 包时把它改成 `dist/build/mp-weixin/`。
+- `web-mini/src/manifest.json` 的 `appid` 要换成你自己的小程序 AppID。
+- 接口地址：开发态默认直连 `http://127.0.0.1:3000`；走 80 网关时把 `web-mini/.env` 的 `VITE_API_PORT` 置空；发布时填 `VITE_API_ORIGIN=https://你的域名`，并在微信公众平台配置为合法域名。
+- 登录采用**手机号统一登录**，商家与会员可切换。dev 构建带商家测试账号，build 构建不含；**短信验证码尚未接入**，正式上线前必须补齐。
 
-## 微信开发者工具
+---
 
-先打包：
+## 四、端口一览
 
-```bash
-npm run build:mp-weixin
-```
+| 端口 | 用途 |
+| --- | --- |
+| 80 | 网关（管理后台 + 后端 API 反代） |
+| 3000 | 后端直连（本地开发） |
+| 3306 | MySQL |
+| 5173 | 管理后台 Vite |
+| 5175 | 小程序 H5 预览 |
+| 8765 | Laya 决策模型（可选，挂了不影响启动） |
 
-用微信开发者工具导入目录：
-
-`web-mini/dist/build/mp-weixin`
-
-边改边看时用 `npm run dev:mp-weixin`，导入 `web-mini/dist/dev/mp-weixin`。本机调试请在开发者工具里勾选「不校验合法域名」。`manifest.json` 里的 `appid` 目前为空，导入前填上你的小程序 AppID。
-
-商家端页面在分包 `pages/merchant`，主包只保留登录、会员页和入驻落地页。
-
-## 修改后端 API 地址
-
-打开 `src/utils/request.ts`，修改 `API_BASE_URL`。默认是：
-
-```ts
-export const API_BASE_URL = 'http://127.0.0.1/api/v1';
-```
-
-入驻申请页地址由这个网关域名推导：去掉末尾的 `/api/v1`，再加上 `/apply`。例如默认会打开 `http://127.0.0.1/apply?invite=邀请码`。
-
-订阅消息模板 ID 在 `src/config.ts`。到微信公众平台申请「核销结果」「积分兑换 / 券到期」两类模板后，把 ID 填进 `TMPL_MERCHANT_REDEEM` 和 `TMPL_MEMBER_EXCHANGE`。留空时仍会弹出授权引导，但不会向微信发送空模板。
+更多细节见 `docs/08-快速启动指南.md`、`docs/05-部署手册.md`、`docs/03-API接口.md`。

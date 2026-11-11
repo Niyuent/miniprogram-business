@@ -1,6 +1,31 @@
-node_modules
-dist
-unpackage
-*.local
-.DS_Store
+# 依赖与产物
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+*.tsbuildinfo
+
+# 环境文件（含真实密钥，绝不入库；只提交 .example 模板）
+.env
+**/.env
+.env.local
+.env.*.local
+!.env.example
+!**/.env.example
+
+# 运行时上传 / 备份 / 日志 / 临时 SQL
+uploads/*
+!uploads/.gitkeep
+*.bak
 *.log
+tmp-*.sql
+**/tmp-*.sql
+
+# 编辑器与缓存
+.DS_Store
+.idea/
+.vscode/
+coverage/
+.temp/
+.cache/
